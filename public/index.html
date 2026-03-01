@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CloudVault — Media Sync Hub</title>
+
+  <!-- Open Graph / Link Preview -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://cloudvault-agency.netlify.app/" />
+  <meta property="og:title" content="CloudVault — Media Sync Hub" />
+  <meta property="og:description" content="Premium media management for social media agencies. Sync from iCloud, organize by person, and export to Google Drive — all in one place." />
+  <meta property="og:image" content="https://cloudvault-agency.netlify.app/og-image.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:site_name" content="CloudVault" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="CloudVault — Media Sync Hub" />
+  <meta name="twitter:description" content="Premium media management for social media agencies. Sync from iCloud, organize by person, and export to Google Drive." />
+  <meta name="twitter:image" content="https://cloudvault-agency.netlify.app/og-image.png" />
+
+  <!-- General Meta -->
+  <meta name="description" content="Premium media management for social media agencies. Sync from iCloud, organize by person, and export to Google Drive — all in one place." />
+  <meta name="theme-color" content="#0c0c14" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- ════════ SIDEBAR ════════ -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-icon">
+        <svg viewBox="0 0 32 32" fill="none"><path d="M16 4C9.373 4 4 9.373 4 16s5.373 12 12 12 12-5.373 12-12S22.627 4 16 4z" fill="url(#g1)" /><path d="M12 14l4-4 4 4M16 10v10" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="g1" x1="4" y1="4" x2="28" y2="28"><stop stop-color="#E8853D"/><stop offset="1" stop-color="#D4533B"/></linearGradient></defs></svg>
+      </div>
+      <span class="brand-text">CloudVault</span>
+    </div>
+
+    <nav class="sidebar-nav">
+      <a href="#" class="nav-item active" data-view="dashboard">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/></svg>
+        <span>Dashboard</span>
+      </a>
+      <a href="#" class="nav-item" data-view="people">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zm8 0a3 3 0 11-6 0 3 3 0 016 0zm-4.07 11c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/></svg>
+        <span>People</span>
+      </a>
+      <a href="#" class="nav-item" data-view="media">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"/></svg>
+        <span>All Media</span>
+      </a>
+      <a href="#" class="nav-item" data-view="downloads">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        <span>Downloads</span>
+      </a>
+      <a href="#" class="nav-item nav-admin" data-view="admin">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z" clip-rule="evenodd"/></svg>
+        <span>Admin</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-connections">
+      <p class="sidebar-label">Connections</p>
+      <button class="connect-btn icloud-btn" id="connectICloudBtn">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="18"><path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg>
+        <span>Connect iCloud</span>
+      </button>
+      <button class="connect-btn gdrive-btn" id="connectGDriveBtn">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="18"><path d="M7.71 3.5L1.15 15l3.43 5.97L11.14 9.47 7.71 3.5zm1.14 0l6.86 11.94H22.85L16 3.5H8.85zM15.29 16.5H1.71L5.14 22.47h13.72l-3.57-5.97z"/></svg>
+        <span>Connect Google Drive</span>
+      </button>
+
+      <div class="connected-accounts" id="connectedAccounts"></div>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="storage-indicator">
+        <div class="storage-bar"><div class="storage-fill" id="storageFill"></div></div>
+        <span class="storage-text" id="storageText">0 GB / 50 GB</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ════════ MAIN CONTENT ════════ -->
+  <main class="main-content" id="mainContent">
+    <!-- TOP BAR -->
+    <header class="topbar">
+      <button class="sidebar-toggle" id="sidebarToggle">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 5a1 1 0 011-1h6a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd"/></svg>
+      </button>
+      <div class="search-box">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+        <input type="text" placeholder="Search media, people, tags..." id="searchInput" />
+      </div>
+      <div class="topbar-actions">
+        <button class="action-btn sync-btn" id="syncAllBtn" title="Upload">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
+          <span>Upload</span>
+        </button>
+        <button class="action-btn download-all-btn" id="downloadAllBtn" title="Download All">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+          <span>Download</span>
+        </button>
+        <button class="action-btn gdrive-transfer-btn" id="gdriveTransferBtn" title="Move to Google Drive">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path d="M7.71 3.5L1.15 15l3.43 5.97L11.14 9.47 7.71 3.5zm1.14 0l6.86 11.94H22.85L16 3.5H8.85zM15.29 16.5H1.71L5.14 22.47h13.72l-3.57-5.97z"/></svg>
+          <span>To Drive</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- SYNC PROGRESS BAR (hidden by default) -->
+    <div class="sync-progress-bar" id="syncProgress">
+      <div class="sync-progress-inner">
+        <div class="sync-info">
+          <span class="sync-label" id="syncLabel">Syncing from iCloud...</span>
+          <span class="sync-percent" id="syncPercent">0%</span>
+        </div>
+        <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+      </div>
+    </div>
+
+    <!-- ═══ VIEW: DASHBOARD ═══ -->
+    <section class="view active" id="viewDashboard">
+      <div class="view-header">
+        <h1 class="view-title">Dashboard</h1>
+        <p class="view-subtitle">Your media command center</p>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon photos-icon">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"/></svg>
+          </div>
+          <div class="stat-info">
+            <span class="stat-value" id="totalPhotos">0</span>
+            <span class="stat-label">Photos</span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon videos-icon">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zm12.553 1.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z"/></svg>
+          </div>
+          <div class="stat-info">
+            <span class="stat-value" id="totalVideos">0</span>
+            <span class="stat-label">Videos</span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon people-icon">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zm8 0a3 3 0 11-6 0 3 3 0 016 0zm-4.07 11c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/></svg>
+          </div>
+          <div class="stat-info">
+            <span class="stat-value" id="totalPeople">0</span>
+            <span class="stat-label">People</span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon storage-icon">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path d="M2 5a2 2 0 012-2h12a2 2 0 012 2v2a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm14 1a1 1 0 11-2 0 1 1 0 012 0zM2 13a2 2 0 012-2h12a2 2 0 012 2v2a2 2 0 01-2 2H4a2 2 0 01-2-2v-2zm14 1a1 1 0 11-2 0 1 1 0 012 0z"/></svg>
+          </div>
+          <div class="stat-info">
+            <span class="stat-value" id="totalStorage">0 GB</span>
+            <span class="stat-label">Storage Used</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- WELCOME / ONBOARDING (shown when no accounts connected) -->
+      <div class="onboarding" id="onboarding">
+        <div class="onboarding-card">
+          <div class="onboarding-illustration">
+            <svg viewBox="0 0 200 160" fill="none">
+              <rect x="30" y="40" width="140" height="90" rx="12" fill="#1a1a2e" stroke="#E8853D" stroke-width="1.5"/>
+              <circle cx="100" cy="75" r="20" fill="#E8853D" fill-opacity="0.15" stroke="#E8853D" stroke-width="1.5"/>
+              <path d="M95 75l4 4 8-8" stroke="#E8853D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M60 105h80" stroke="#2a2a4a" stroke-width="1"/>
+              <circle cx="70" cy="115" r="4" fill="#E8853D" fill-opacity="0.4"/>
+              <circle cx="85" cy="115" r="4" fill="#D4533B" fill-opacity="0.4"/>
+              <circle cx="100" cy="115" r="4" fill="#E8853D" fill-opacity="0.4"/>
+            </svg>
+          </div>
+          <h2>Get started with CloudVault</h2>
+          <p>Connect your team's iCloud accounts to sync all photos and videos in one place.</p>
+          <button class="cta-btn" id="ctaConnect">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="20"><path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg>
+            Connect iCloud Account
+          </button>
+        </div>
+      </div>
+
+      <!-- RECENT ACTIVITY (shown after content exists) -->
+      <div class="recent-section" id="recentSection" style="display:none;">
+        <h2 class="section-title">Recent Uploads</h2>
+        <div class="media-grid" id="recentGrid"></div>
+      </div>
+    </section>
+
+    <!-- ═══ VIEW: PEOPLE ═══ -->
+    <section class="view" id="viewPeople">
+      <div class="view-header">
+        <h1 class="view-title">People</h1>
+        <p class="view-subtitle">Browse media by team member</p>
+      </div>
+      <div class="people-grid" id="peopleGrid"></div>
+
+      <!-- PERSON DETAIL (shown when clicking a person) -->
+      <div class="person-detail" id="personDetail" style="display:none;">
+        <button class="back-btn" id="backToPeople">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd"/></svg>
+          Back to People
+        </button>
+        <div class="person-header" id="personHeader"></div>
+        <div class="person-filters" id="personFilters"></div>
+        <div class="media-grid" id="personMediaGrid"></div>
+      </div>
+    </section>
+
+    <!-- ═══ VIEW: ALL MEDIA ═══ -->
+    <section class="view" id="viewMedia">
+      <div class="view-header">
+        <h1 class="view-title">All Media</h1>
+        <p class="view-subtitle">Browse and filter all synced content</p>
+      </div>
+
+      <div class="filter-bar" id="filterBar">
+        <div class="filter-group">
+          <label>Type</label>
+          <select id="filterType">
+            <option value="all">All Types</option>
+            <option value="photo">Photos</option>
+            <option value="video">Videos</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Person</label>
+          <select id="filterPerson">
+            <option value="all">Everyone</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Date</label>
+          <select id="filterDate">
+            <option value="all">All Time</option>
+            <option value="today">Today</option>
+            <option value="week">This Week</option>
+            <option value="month">This Month</option>
+            <option value="year">This Year</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Sort</label>
+          <select id="filterSort">
+            <option value="newest">Newest First</option>
+            <option value="oldest">Oldest First</option>
+            <option value="largest">Largest First</option>
+            <option value="smallest">Smallest First</option>
+            <option value="name">By Name</option>
+          </select>
+        </div>
+        <div class="filter-group selection-info" id="selectionInfo" style="display:none;">
+          <span id="selectedCount">0 selected</span>
+          <button class="small-btn" id="selectAllBtn">Select All</button>
+          <button class="small-btn" id="clearSelectionBtn">Clear</button>
+        </div>
+      </div>
+
+      <div class="media-grid selectable" id="allMediaGrid"></div>
+    </section>
+
+    <!-- ═══ VIEW: DOWNLOADS ═══ -->
+    <section class="view" id="viewDownloads">
+      <div class="view-header">
+        <h1 class="view-title">Downloads & Transfers</h1>
+        <p class="view-subtitle">Manage your downloads and Google Drive transfers</p>
+      </div>
+
+      <div class="download-options">
+        <div class="download-card">
+          <div class="dl-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <h3>Download All Media</h3>
+          <p>Download everything as a ZIP archive organized by person and date.</p>
+          <button class="cta-btn" id="downloadZipBtn">Download ZIP</button>
+        </div>
+        <div class="download-card">
+          <div class="dl-icon gdrive-icon">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7.71 3.5L1.15 15l3.43 5.97L11.14 9.47 7.71 3.5zm1.14 0l6.86 11.94H22.85L16 3.5H8.85zM15.29 16.5H1.71L5.14 22.47h13.72l-3.57-5.97z"/></svg>
+          </div>
+          <h3>Transfer to Google Drive</h3>
+          <p>Move all synced content directly to your Google Drive folder.</p>
+          <button class="cta-btn" id="transferDriveBtn">Transfer All</button>
+        </div>
+        <div class="download-card">
+          <div class="dl-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <h3>Selective Export</h3>
+          <p>Go to All Media, select specific items, then download or transfer.</p>
+          <button class="cta-btn secondary" id="goToMediaBtn">Go to Media</button>
+        </div>
+      </div>
+
+      <div class="transfer-history" id="transferHistory">
+        <h2 class="section-title">Transfer History</h2>
+        <div class="history-list" id="historyList">
+          <div class="empty-state">No transfers yet</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ VIEW: ADMIN ═══ -->
+    <section class="view" id="viewAdmin">
+      <!-- LOGIN GATE (shown when not authenticated) -->
+      <div class="admin-login" id="adminLogin">
+        <div class="admin-login-card">
+          <div class="admin-lock-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <h2>Admin Access</h2>
+          <p>Enter the admin password to manage people and settings.</p>
+          <form id="adminLoginForm">
+            <div class="form-field">
+              <input type="password" id="adminPasswordInput" placeholder="Enter admin password" required autocomplete="off" />
+            </div>
+            <div class="admin-error" id="adminError" style="display:none;">Incorrect password. Try again.</div>
+            <button type="submit" class="cta-btn admin-login-btn">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="16"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg>
+              Unlock Admin Panel
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- ADMIN PANEL (shown after login) -->
+      <div class="admin-panel" id="adminPanel" style="display:none;">
+        <div class="view-header admin-header">
+          <div>
+            <h1 class="view-title">Admin Panel</h1>
+            <p class="view-subtitle">Manage people, accounts, and media</p>
+          </div>
+          <button class="action-btn admin-logout-btn" id="adminLogoutBtn">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 001 1h12a1 1 0 001-1V4a1 1 0 00-1-1H3zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clip-rule="evenodd"/></svg>
+            <span>Log Out</span>
+          </button>
+        </div>
+
+        <!-- Admin Stats -->
+        <div class="admin-stats-row" id="adminStats"></div>
+
+        <!-- People Management -->
+        <div class="admin-section">
+          <div class="admin-section-header">
+            <h2 class="section-title">People Management</h2>
+            <p class="admin-section-desc">Remove people and all their associated media from CloudVault.</p>
+          </div>
+          <div class="admin-people-list" id="adminPeopleList">
+            <div class="empty-state">No people synced yet. Connect iCloud and sync first.</div>
+          </div>
+        </div>
+
+        <!-- Connected Accounts Management -->
+        <div class="admin-section">
+          <div class="admin-section-header">
+            <h2 class="section-title">Connected Accounts</h2>
+            <p class="admin-section-desc">Manage iCloud and Google Drive connections.</p>
+          </div>
+          <div class="admin-accounts-list" id="adminAccountsList">
+            <div class="empty-state">No accounts connected.</div>
+          </div>
+        </div>
+
+        <!-- Danger Zone -->
+        <div class="admin-section danger-zone">
+          <div class="admin-section-header">
+            <h2 class="section-title" style="color: var(--red);">Danger Zone</h2>
+          </div>
+          <div class="danger-actions">
+            <div class="danger-item">
+              <div>
+                <strong>Remove All Media</strong>
+                <p>Delete all synced photos and videos. This cannot be undone.</p>
+              </div>
+              <button class="danger-btn" id="clearAllMediaBtn">Clear All Media</button>
+            </div>
+            <div class="danger-item">
+              <div>
+                <strong>Disconnect All Accounts</strong>
+                <p>Remove all iCloud and Google Drive connections.</p>
+              </div>
+              <button class="danger-btn" id="disconnectAllBtn">Disconnect All</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ════════ LIGHTBOX MODAL ════════ -->
+  <div class="lightbox" id="lightbox">
+    <div class="lightbox-backdrop"></div>
+    <div class="lightbox-content">
+      <button class="lightbox-close" id="lightboxClose">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+      </button>
+      <button class="lightbox-nav prev" id="lightboxPrev">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+      </button>
+      <button class="lightbox-nav next" id="lightboxNext">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
+      </button>
+      <div class="lightbox-media" id="lightboxMedia"></div>
+      <div class="lightbox-info" id="lightboxInfo"></div>
+    </div>
+  </div>
+
+  <!-- ════════ iCLOUD CONNECT MODAL ════════ -->
+  <div class="modal" id="icloudModal">
+    <div class="modal-backdrop"></div>
+    <div class="modal-card icloud-modal-card">
+      <button class="modal-close" id="icloudModalClose">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+      </button>
+      <div class="icloud-sign-in">
+        <div class="apple-logo">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+        </div>
+        <h2>Connect iCloud</h2>
+        <p>Sign in with your Apple ID to sync photos and videos</p>
+
+        <!-- Step 1: OAuth-style one-click -->
+        <div id="icloudStep1">
+          <button class="apple-sign-in-btn" id="appleOAuthBtn">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="16"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+            Sign in with Apple
+          </button>
+          <p class="modal-note">You'll be redirected to Apple's secure sign-in page.</p>
+        </div>
+
+        <!-- Step 2: Simulated Apple auth loading -->
+        <div id="icloudStep2" style="display:none;">
+          <div class="icloud-auth-loading">
+            <div class="auth-spinner"></div>
+            <p>Connecting to Apple ID...</p>
+          </div>
+        </div>
+
+        <!-- Step 3: Auth complete, upload files -->
+        <div id="icloudStep3" style="display:none;">
+          <div class="icloud-auth-success">
+            <svg viewBox="0 0 24 24" fill="none" width="40" height="40"><circle cx="12" cy="12" r="10" stroke="var(--green)" stroke-width="2"/><path d="M8 12l3 3 5-5" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <p class="auth-success-name" id="authSuccessName"></p>
+            <p class="auth-success-email" id="authSuccessEmail"></p>
+
+            <div class="upload-zone" id="uploadZone">
+              <div class="upload-zone-content">
+                <svg viewBox="0 0 48 48" fill="none" width="40" height="40">
+                  <path d="M24 32V16m0 0l-8 8m8-8l8 8" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M38 30c2-1.5 4-4 4-7 0-5-4-9-9-9-.6 0-1.2.1-1.8.2C29.3 9.8 25 7 20 7c-6.6 0-12 5.4-12 12 0 .6.1 1.2.2 1.8C5.3 22 3 25 3 28.5 3 33 6.6 36 11 36h27" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+                <p class="upload-zone-text">Drag & drop photos and videos here</p>
+                <p class="upload-zone-subtext">or click to browse (JPG, PNG, HEIC, MP4, MOV)</p>
+                <input type="file" id="fileInput" multiple accept="image/*,video/*,.heic,.heif" style="display:none;" />
+              </div>
+              <div class="upload-zone-files" id="uploadFileList" style="display:none;">
+                <p id="uploadFileCount">0 files selected</p>
+              </div>
+            </div>
+
+            <button class="apple-sign-in-btn" id="icloudSyncNowBtn">
+              <svg viewBox="0 0 24 24" fill="currentColor" width="16"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+              Upload Files
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════ GOOGLE DRIVE CONNECT MODAL ════════ -->
+  <div class="modal" id="gdriveModal">
+    <div class="modal-backdrop"></div>
+    <div class="modal-card gdrive-modal-card">
+      <button class="modal-close" id="gdriveModalClose">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+      </button>
+      <div class="gdrive-sign-in">
+        <div class="gdrive-logo">
+          <svg viewBox="0 0 48 48" fill="none" width="56">
+            <path d="M16.43 7L3 30l6.86 11.94L23.29 18.94 16.43 7z" fill="#0066DA"/>
+            <path d="M17.57 7l13.72 23.94H45L31.29 7H17.57z" fill="#00AC47"/>
+            <path d="M30.57 33H3.14L10 44.94h27.43L30.57 33z" fill="#EA4335"/>
+          </svg>
+        </div>
+        <h2>Connect Google Drive</h2>
+        <p>Link your Google Drive to transfer media directly</p>
+        <button class="google-sign-in-btn" id="googleSignInBtn">
+          <svg viewBox="0 0 24 24" width="18"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+          Sign in with Google
+        </button>
+        <p class="modal-note">We'll create a "CloudVault" folder in your Drive for organized transfers.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════ TRANSFER PROGRESS MODAL ════════ -->
+  <div class="modal" id="transferModal">
+    <div class="modal-backdrop"></div>
+    <div class="modal-card transfer-modal-card">
+      <div class="transfer-progress-content">
+        <div class="transfer-spinner"></div>
+        <h2 id="transferTitle">Transferring to Google Drive...</h2>
+        <p id="transferStatus">Preparing files...</p>
+        <div class="progress-track"><div class="progress-fill" id="transferProgressFill"></div></div>
+        <span class="transfer-count" id="transferCount">0 / 0 files</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════ MOBILE BOTTOM NAV ════════ -->
+  <nav class="mobile-nav" id="mobileNav">
+    <a href="#" class="mobile-nav-item active" data-view="dashboard">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/></svg>
+      <span>Home</span>
+    </a>
+    <a href="#" class="mobile-nav-item" data-view="people">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zm8 0a3 3 0 11-6 0 3 3 0 016 0zm-4.07 11c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/></svg>
+      <span>People</span>
+    </a>
+    <a href="#" class="mobile-nav-item" data-view="media">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"/></svg>
+      <span>Media</span>
+    </a>
+    <a href="#" class="mobile-nav-item" data-view="downloads">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+      <span>Export</span>
+    </a>
+    <a href="#" class="mobile-nav-item" data-view="admin">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z" clip-rule="evenodd"/></svg>
+      <span>Admin</span>
+    </a>
+  </nav>
+
+  <!-- ════════ SIDEBAR BACKDROP (mobile) ════════ -->
+  <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+  <!-- ════════ TOAST NOTIFICATIONS ════════ -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

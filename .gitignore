@@ -1,0 +1,7 @@
+node_modules/
+uploads/originals/
+uploads/thumbnails/
+cloudvault.db
+.env
+.netlify/
+.claude/

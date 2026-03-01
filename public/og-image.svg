@@ -1,0 +1,177 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <!-- Background gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0c0c14"/>
+      <stop offset="50%" stop-color="#12121e"/>
+      <stop offset="100%" stop-color="#0a0a18"/>
+    </linearGradient>
+    <!-- Brand gradient -->
+    <linearGradient id="brandGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#E8853D"/>
+      <stop offset="100%" stop-color="#D4533B"/>
+    </linearGradient>
+    <!-- Glow gradient -->
+    <radialGradient id="glowCenter" cx="50%" cy="45%" r="40%">
+      <stop offset="0%" stop-color="#E8853D" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#E8853D" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Top-right glow -->
+    <radialGradient id="glowTR" cx="85%" cy="15%" r="30%">
+      <stop offset="0%" stop-color="#D4533B" stop-opacity="0.1"/>
+      <stop offset="100%" stop-color="#D4533B" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Bottom-left glow -->
+    <radialGradient id="glowBL" cx="15%" cy="85%" r="25%">
+      <stop offset="0%" stop-color="#E8853D" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#E8853D" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Grid pattern -->
+    <pattern id="gridPattern" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(232,133,61,0.04)" stroke-width="0.5"/>
+    </pattern>
+    <!-- Noise filter -->
+    <filter id="noise">
+      <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feBlend in="SourceGraphic" mode="multiply" result="blend"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.03"/>
+      </feComponentTransfer>
+      <feComposite in2="SourceGraphic" operator="in"/>
+    </filter>
+    <!-- Cloud icon gradient -->
+    <linearGradient id="cloudGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#E8853D"/>
+      <stop offset="100%" stop-color="#D4533B"/>
+    </linearGradient>
+    <!-- Floating card shadow -->
+    <filter id="cardShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#000" flood-opacity="0.4"/>
+    </filter>
+    <filter id="cardShadowSm" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.3"/>
+    </filter>
+    <!-- Icon glow -->
+    <filter id="iconGlow">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feFlood flood-color="#E8853D" flood-opacity="0.4"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bgGrad)"/>
+  <rect width="1200" height="630" fill="url(#gridPattern)"/>
+  <rect width="1200" height="630" fill="url(#glowCenter)"/>
+  <rect width="1200" height="630" fill="url(#glowTR)"/>
+  <rect width="1200" height="630" fill="url(#glowBL)"/>
+
+  <!-- Decorative geometric lines -->
+  <line x1="0" y1="120" x2="200" y2="120" stroke="rgba(232,133,61,0.12)" stroke-width="1"/>
+  <line x1="1000" y1="510" x2="1200" y2="510" stroke="rgba(212,83,59,0.12)" stroke-width="1"/>
+  <line x1="100" y1="0" x2="100" y2="80" stroke="rgba(232,133,61,0.08)" stroke-width="1"/>
+  <line x1="1100" y1="550" x2="1100" y2="630" stroke="rgba(232,133,61,0.08)" stroke-width="1"/>
+
+  <!-- Floating decorative circles -->
+  <circle cx="950" cy="130" r="60" fill="none" stroke="rgba(232,133,61,0.06)" stroke-width="1"/>
+  <circle cx="950" cy="130" r="40" fill="none" stroke="rgba(232,133,61,0.04)" stroke-width="1"/>
+  <circle cx="200" cy="500" r="45" fill="none" stroke="rgba(212,83,59,0.05)" stroke-width="1"/>
+
+  <!-- Floating media cards (right side) -->
+  <!-- Card 1 - Photo thumbnail -->
+  <g filter="url(#cardShadow)" transform="translate(780, 140) rotate(6)">
+    <rect width="180" height="130" rx="10" fill="#1a1a2e"/>
+    <rect width="180" height="85" rx="10" fill="#252540"/>
+    <rect y="85" width="180" height="45" rx="0" fill="#1a1a2e"/>
+    <rect x="0" y="85" width="180" height="1" fill="rgba(232,133,61,0.15)"/>
+    <!-- Image icon placeholder -->
+    <circle cx="90" cy="42" r="18" fill="rgba(232,133,61,0.15)"/>
+    <path d="M82 42l5-6 4 5 3-3 6 7H79z" fill="rgba(232,133,61,0.4)"/>
+    <circle cx="84" cy="36" r="3" fill="rgba(232,133,61,0.3)"/>
+    <!-- Card text lines -->
+    <rect x="12" y="95" width="80" height="6" rx="3" fill="rgba(255,255,255,0.15)"/>
+    <rect x="12" y="108" width="50" height="5" rx="2.5" fill="rgba(255,255,255,0.08)"/>
+    <!-- Type badge -->
+    <rect x="130" y="95" width="38" height="18" rx="4" fill="rgba(232,133,61,0.15)"/>
+    <text x="149" y="107" font-family="sans-serif" font-size="8" fill="#E8853D" text-anchor="middle" font-weight="600">JPG</text>
+  </g>
+
+  <!-- Card 2 - Video thumbnail -->
+  <g filter="url(#cardShadowSm)" transform="translate(850, 310) rotate(-3)">
+    <rect width="160" height="120" rx="10" fill="#1a1a2e"/>
+    <rect width="160" height="78" rx="10" fill="#252540"/>
+    <rect y="78" width="160" height="42" rx="0" fill="#1a1a2e"/>
+    <rect x="0" y="78" width="160" height="1" fill="rgba(212,83,59,0.15)"/>
+    <!-- Play button -->
+    <circle cx="80" cy="39" r="16" fill="rgba(232,133,61,0.2)"/>
+    <path d="M75 30l14 9-14 9z" fill="rgba(232,133,61,0.5)"/>
+    <!-- Card text lines -->
+    <rect x="12" y="87" width="70" height="5" rx="2.5" fill="rgba(255,255,255,0.15)"/>
+    <rect x="12" y="98" width="45" height="4" rx="2" fill="rgba(255,255,255,0.08)"/>
+    <!-- Type badge -->
+    <rect x="112" y="86" width="36" height="16" rx="4" fill="rgba(212,83,59,0.15)"/>
+    <text x="130" y="97" font-family="sans-serif" font-size="7" fill="#D4533B" text-anchor="middle" font-weight="600">MP4</text>
+  </g>
+
+  <!-- Card 3 - Small card -->
+  <g filter="url(#cardShadowSm)" transform="translate(720, 360) rotate(2)">
+    <rect width="120" height="90" rx="8" fill="#1a1a2e"/>
+    <rect width="120" height="58" rx="8" fill="#252540"/>
+    <rect y="58" width="120" height="32" rx="0" fill="#1a1a2e"/>
+    <rect x="0" y="58" width="120" height="1" fill="rgba(232,133,61,0.1)"/>
+    <!-- Image icon -->
+    <circle cx="60" cy="29" r="12" fill="rgba(232,133,61,0.12)"/>
+    <path d="M54 29l4-4 3 3 2-2 5 6H52z" fill="rgba(232,133,61,0.3)"/>
+    <!-- Text -->
+    <rect x="10" y="66" width="55" height="4" rx="2" fill="rgba(255,255,255,0.12)"/>
+    <rect x="10" y="76" width="35" height="3" rx="1.5" fill="rgba(255,255,255,0.06)"/>
+  </g>
+
+  <!-- Main brand area (left side) -->
+  <!-- Logo icon -->
+  <g filter="url(#iconGlow)" transform="translate(120, 195)">
+    <circle cx="32" cy="32" r="32" fill="url(#brandGrad)"/>
+    <path d="M20 28l12-12 12 12M32 16v24" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  </g>
+
+  <!-- Brand text -->
+  <text x="200" y="234" font-family="'Georgia', 'Times New Roman', serif" font-size="52" fill="#ffffff" font-weight="700" letter-spacing="-1">CloudVault</text>
+
+  <!-- Tagline -->
+  <text x="125" y="280" font-family="'Helvetica Neue', 'Arial', sans-serif" font-size="18" fill="rgba(255,255,255,0.5)" letter-spacing="3" text-transform="uppercase" font-weight="300">MEDIA SYNC HUB</text>
+
+  <!-- Description -->
+  <text x="125" y="330" font-family="'Helvetica Neue', 'Arial', sans-serif" font-size="16" fill="rgba(255,255,255,0.35)" letter-spacing="0.5">
+    <tspan x="125" dy="0">Sync, organize, and manage your agency's</tspan>
+    <tspan x="125" dy="24">media content from iCloud to Google Drive.</tspan>
+  </text>
+
+  <!-- Feature pills -->
+  <g transform="translate(125, 390)">
+    <!-- iCloud pill -->
+    <rect width="110" height="32" rx="16" fill="rgba(232,133,61,0.1)" stroke="rgba(232,133,61,0.2)" stroke-width="1"/>
+    <text x="55" y="21" font-family="'Helvetica Neue', 'Arial', sans-serif" font-size="11" fill="#E8853D" text-anchor="middle" font-weight="500">iCloud Sync</text>
+    <!-- Google Drive pill -->
+    <rect x="120" width="130" height="32" rx="16" fill="rgba(232,133,61,0.1)" stroke="rgba(232,133,61,0.2)" stroke-width="1"/>
+    <text x="185" y="21" font-family="'Helvetica Neue', 'Arial', sans-serif" font-size="11" fill="#E8853D" text-anchor="middle" font-weight="500">Google Drive</text>
+    <!-- Media pill -->
+    <rect x="260" width="140" height="32" rx="16" fill="rgba(232,133,61,0.1)" stroke="rgba(232,133,61,0.2)" stroke-width="1"/>
+    <text x="330" y="21" font-family="'Helvetica Neue', 'Arial', sans-serif" font-size="11" fill="#E8853D" text-anchor="middle" font-weight="500">Media Manager</text>
+  </g>
+
+  <!-- Accent line under brand -->
+  <rect x="125" y="295" width="60" height="2" rx="1" fill="url(#brandGrad)" opacity="0.6"/>
+
+  <!-- Bottom bar -->
+  <rect y="600" width="1200" height="30" fill="rgba(232,133,61,0.08)"/>
+  <rect y="600" width="1200" height="1" fill="rgba(232,133,61,0.15)"/>
+  <text x="600" y="620" font-family="'Helvetica Neue', 'Arial', sans-serif" font-size="11" fill="rgba(255,255,255,0.25)" text-anchor="middle" letter-spacing="2">CLOUDVAULT.AGENCY</text>
+
+  <!-- Noise overlay -->
+  <rect width="1200" height="630" filter="url(#noise)" opacity="0.4"/>
+</svg>
