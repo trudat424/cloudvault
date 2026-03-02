@@ -97,6 +97,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   initSidebarToggle();
   initAdmin();
 
+  // Check for Google Drive OAuth callback
+  const urlParams = new URLSearchParams(window.location.search);
+  const gdriveParam = urlParams.get('gdrive');
+  if (gdriveParam === 'connected') {
+    showToast('Google Drive connected successfully', 'success');
+    window.history.replaceState({}, '', '/');
+  } else if (gdriveParam === 'error') {
+    const reason = urlParams.get('reason') || 'Unknown error';
+    showToast('Google Drive connection failed: ' + reason, 'error');
+    window.history.replaceState({}, '', '/');
+  }
+
   // Load persisted data from server
   try {
     await refreshAccounts();
@@ -267,15 +279,8 @@ async function handleAppleOAuth() {
 // GOOGLE DRIVE CONNECTION (API-backed)
 // ────────────────────────────
 async function handleGDriveConnect() {
-  try {
-    await API.post('/gdrive/connect', {});
-    state.gdriveConnected = true;
-    closeModal('gdriveModal');
-    showToast('Google Drive connected successfully', 'success');
-    renderConnectedAccounts();
-  } catch (err) {
-    showToast('Failed to connect Google Drive', 'error');
-  }
+  // Redirect to Google OAuth — works on both desktop and mobile
+  window.location.href = '/api/gdrive/auth';
 }
 
 // ────────────────────────────
@@ -1073,11 +1078,7 @@ function transferSingleToDrive(mediaId) {
   const item = state.media.find((m) => m.id === mediaId);
   if (!item) return;
 
-  showToast(`Transferring ${item.name} to Google Drive...`, 'info');
-  setTimeout(() => {
-    showToast(`${item.name} transferred to Google Drive`, 'success');
-    addTransferHistory('transfer', `Transferred ${item.name} to Drive`, item.sizeMB);
-  }, 1000);
+  startTransferProgress([item]);
 }
 
 function transferSelectedToDrive() {
@@ -1113,39 +1114,53 @@ function transferAllToDrive() {
   startTransferProgress(visible);
 }
 
-function startTransferProgress(items) {
+async function startTransferProgress(items) {
   openModal('transferModal');
 
   const fill = $('#transferProgressFill');
   const countEl = $('#transferCount');
   const statusEl = $('#transferStatus');
   const total = items.length;
-  let current = 0;
 
-  const interval = setInterval(() => {
-    current += Math.ceil(Math.random() * 3);
-    if (current > total) current = total;
+  fill.style.width = '0%';
+  countEl.textContent = `0 / ${total} files`;
+  statusEl.textContent = 'Uploading to Google Drive...';
 
-    const pct = (current / total) * 100;
-    fill.style.width = pct + '%';
-    countEl.textContent = `${current} / ${total} files`;
-    statusEl.textContent = current < total ? `Transferring ${items[Math.min(current, total - 1)].name}...` : 'Finalizing...';
+  try {
+    const ids = items.map((m) => m.id);
+    const result = await API.post('/gdrive/transfer', { ids });
 
-    if (current >= total) {
-      clearInterval(interval);
-      const totalSize = items.reduce((sum, m) => sum + m.sizeMB, 0);
+    // Animate to 100%
+    fill.style.width = '100%';
+    countEl.textContent = `${result.transferred} / ${total} files`;
+    statusEl.textContent = 'Complete!';
 
-      setTimeout(() => {
-        closeModal('transferModal');
-        fill.style.width = '0%';
-        showToast(`${total} files transferred to Google Drive`, 'success');
-        addTransferHistory('transfer', `Transferred ${total} files to Google Drive`, totalSize);
+    setTimeout(() => {
+      closeModal('transferModal');
+      fill.style.width = '0%';
 
-        // Record on server
-        API.post('/gdrive/transfer', { count: total, totalMB: totalSize }).catch(() => {});
-      }, 800);
+      if (result.failed > 0) {
+        showToast(`${result.transferred} transferred, ${result.failed} failed`, 'error');
+      } else {
+        showToast(`${result.transferred} files transferred to Google Drive`, 'success');
+      }
+
+      addTransferHistory('transfer', `Transferred ${result.transferred} files to Google Drive`,
+        items.reduce((sum, m) => sum + m.sizeMB, 0));
+    }, 1000);
+  } catch (err) {
+    closeModal('transferModal');
+    fill.style.width = '0%';
+
+    if (err.message && err.message.includes('not connected')) {
+      state.gdriveConnected = false;
+      renderConnectedAccounts();
+      showToast('Google Drive disconnected. Please reconnect.', 'error');
+      openModal('gdriveModal');
+    } else {
+      showToast('Transfer failed: ' + (err.message || 'Unknown error'), 'error');
     }
-  }, 150);
+  }
 }
 
 // ────────────────────────────
