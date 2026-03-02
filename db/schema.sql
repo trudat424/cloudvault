@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS media (
   camera_model  TEXT,
   category      TEXT DEFAULT '',
   has_thumbnail INTEGER DEFAULT 0,
+  source_id     TEXT,
   uploaded_at   TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
 );

@@ -43,6 +43,8 @@ const API = {
 const state = {
   connectedAccounts: [],
   gdriveConnected: false,
+  gdriveEmail: '',
+  gdriveName: '',
   media: [],
   selectedMedia: new Set(),
   currentView: 'dashboard',
@@ -115,6 +117,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     await refreshMedia();
     const gdrive = await API.get('/gdrive/status');
     state.gdriveConnected = gdrive.connected;
+    if (gdrive.connected) {
+      state.gdriveEmail = gdrive.email || '';
+      state.gdriveName = gdrive.name || '';
+    }
 
     // Track all accounts as "ours" for this session
     state.currentUserAccountIds = state.connectedAccounts.map((a) => a.id);
@@ -130,7 +136,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   updateDashboard();
   renderConnectedAccounts();
+  updateGDriveModal();
   populateFilterPeople();
+
+  // After OAuth callback, auto-open the modal in connected state
+  if (gdriveParam === 'connected' && state.gdriveConnected) {
+    openModal('gdriveModal');
+  }
 });
 
 // ────────────────────────────
@@ -216,10 +228,15 @@ function initModals() {
   $('#appleOAuthBtn').addEventListener('click', handleAppleOAuth);
 
   // Google Drive
-  $('#connectGDriveBtn').addEventListener('click', () => openModal('gdriveModal'));
+  $('#connectGDriveBtn').addEventListener('click', () => {
+    updateGDriveModal();
+    openModal('gdriveModal');
+  });
   $('#gdriveModalClose').addEventListener('click', () => closeModal('gdriveModal'));
   $('#gdriveModal .modal-backdrop').addEventListener('click', () => closeModal('gdriveModal'));
   $('#googleSignInBtn').addEventListener('click', handleGDriveConnect);
+  $('#gdriveImportBtn').addEventListener('click', startGDriveImport);
+  $('#gdriveDisconnectBtn').addEventListener('click', handleGDriveDisconnect);
 }
 
 function openICloudModal() {
@@ -281,6 +298,121 @@ async function handleAppleOAuth() {
 async function handleGDriveConnect() {
   // Redirect to Google OAuth — works on both desktop and mobile
   window.location.href = '/api/gdrive/auth';
+}
+
+function updateGDriveModal() {
+  const signIn = $('#gdriveSignIn');
+  const connected = $('#gdriveConnected');
+
+  if (state.gdriveConnected) {
+    signIn.style.display = 'none';
+    connected.style.display = '';
+    $('#gdriveUserEmail').textContent = state.gdriveEmail || 'Connected';
+  } else {
+    signIn.style.display = '';
+    connected.style.display = 'none';
+  }
+}
+
+async function handleGDriveDisconnect() {
+  try {
+    await API.del('/gdrive/disconnect');
+    state.gdriveConnected = false;
+    state.gdriveEmail = '';
+    state.gdriveName = '';
+    renderConnectedAccounts();
+    updateGDriveModal();
+    showToast('Google Drive disconnected', 'info');
+  } catch (err) {
+    showToast('Failed to disconnect: ' + err.message, 'error');
+  }
+}
+
+async function startGDriveImport() {
+  closeModal('gdriveModal');
+  openModal('transferModal');
+
+  const fill = $('#transferProgressFill');
+  const countEl = $('#transferCount');
+  const statusEl = $('#transferStatus');
+  const titleEl = $('#transferTitle');
+
+  titleEl.textContent = 'Importing from Google Drive...';
+  fill.style.width = '0%';
+  countEl.textContent = 'Scanning...';
+  statusEl.textContent = 'Looking for photos and videos in your Drive...';
+
+  const evtSource = new EventSource('/api/gdrive/import');
+
+  evtSource.addEventListener('progress', (e) => {
+    const data = JSON.parse(e.data);
+
+    if (data.status === 'scanning') {
+      statusEl.textContent = data.message;
+    } else if (data.status === 'importing') {
+      const pct = data.total > 0 ? Math.round((data.current / data.total) * 100) : 0;
+      fill.style.width = pct + '%';
+      countEl.textContent = `${data.current} / ${data.total} files`;
+      statusEl.textContent = data.fileName ? `Importing: ${data.fileName}` : data.message;
+    }
+  });
+
+  evtSource.addEventListener('done', (e) => {
+    evtSource.close();
+    const data = JSON.parse(e.data);
+
+    fill.style.width = '100%';
+    statusEl.textContent = 'Complete!';
+    countEl.textContent = `${data.imported} imported`;
+
+    setTimeout(async () => {
+      closeModal('transferModal');
+      fill.style.width = '0%';
+      titleEl.textContent = 'Transferring to Google Drive...';
+
+      if (data.imported > 0) {
+        showToast(`Imported ${data.imported} files from Google Drive`, 'success');
+        // Refresh the gallery
+        await refreshAccounts();
+        await refreshMedia();
+        updateDashboard();
+        renderConnectedAccounts();
+        populateFilterPeople();
+
+        if (state.media.length > 0) {
+          $('#onboarding').style.display = 'none';
+          $('#recentSection').style.display = '';
+          renderRecentMedia();
+        }
+        if (state.currentView === 'media') renderAllMedia();
+        if (state.currentView === 'people') renderPeopleGrid();
+      } else {
+        showToast(data.message || 'No new files to import', 'info');
+      }
+
+      addTransferHistory('import', `Imported ${data.imported} files from Google Drive`, 0);
+    }, 1200);
+  });
+
+  evtSource.addEventListener('error', (e) => {
+    // Check if it's an SSE error event with data
+    if (e.data) {
+      const data = JSON.parse(e.data);
+      evtSource.close();
+      closeModal('transferModal');
+      fill.style.width = '0%';
+      titleEl.textContent = 'Transferring to Google Drive...';
+      showToast('Import failed: ' + data.message, 'error');
+    }
+  });
+
+  evtSource.onerror = () => {
+    evtSource.close();
+    closeModal('transferModal');
+    fill.style.width = '0%';
+    titleEl.textContent = 'Transferring to Google Drive...';
+    showToast('Import connection lost. Please try again.', 'error');
+  };
 }
 
 // ────────────────────────────

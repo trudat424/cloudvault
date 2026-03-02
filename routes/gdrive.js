@@ -6,9 +6,14 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { queryOne, queryAll, run } = require('../db/database');
 const { DATA_DIR, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI } = require('../config');
+const { generateThumbnail } = require('../services/thumbnail');
+const { extractMetadata } = require('../services/metadata');
 
-// Scopes: access to files we create + ability to create files
-const SCOPES = ['https://www.googleapis.com/auth/drive.file'];
+// Scopes: drive.file for export, drive.readonly for import
+const SCOPES = [
+  'https://www.googleapis.com/auth/drive.file',
+  'https://www.googleapis.com/auth/drive.readonly',
+];
 
 function getOAuth2Client() {
   return new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI);
@@ -270,6 +275,246 @@ router.post('/transfer', async (req, res) => {
   } catch (err) {
     console.error('Transfer error:', err.message);
     res.status(500).json({ error: 'Transfer failed: ' + err.message });
+  }
+});
+
+// Helper: ensure upload directories exist
+function ensureDirs() {
+  const origDir = path.join(DATA_DIR, 'uploads', 'originals');
+  const thumbDir = path.join(DATA_DIR, 'uploads', 'thumbnails');
+  if (!fs.existsSync(origDir)) fs.mkdirSync(origDir, { recursive: true });
+  if (!fs.existsSync(thumbDir)) fs.mkdirSync(thumbDir, { recursive: true });
+}
+
+// Helper: get or create a gdrive account for the connected user
+function getOrCreateGDriveAccount(email, displayName) {
+  let account = queryOne("SELECT * FROM accounts WHERE email = ? AND type = 'gdrive'", [email]);
+  if (!account) {
+    const id = 'acc_' + Date.now();
+    run(
+      'INSERT INTO accounts (id, name, email, type, connected_at) VALUES (?, ?, ?, ?, ?)',
+      [id, displayName || email, email, 'gdrive', new Date().toISOString()]
+    );
+    account = queryOne('SELECT * FROM accounts WHERE id = ?', [id]);
+  }
+  return account;
+}
+
+// Helper: get mime extension mapping
+function getExtFromMime(mimeType) {
+  const map = {
+    'image/jpeg': '.jpg',
+    'image/png': '.png',
+    'image/gif': '.gif',
+    'image/webp': '.webp',
+    'image/heic': '.heic',
+    'image/heif': '.heif',
+    'image/bmp': '.bmp',
+    'image/tiff': '.tiff',
+    'video/mp4': '.mp4',
+    'video/quicktime': '.mov',
+    'video/x-msvideo': '.avi',
+    'video/webm': '.webm',
+    'video/3gpp': '.3gp',
+  };
+  return map[mimeType] || '.jpg';
+}
+
+// GET /api/gdrive/import — import photos/videos from Google Drive (SSE)
+router.get('/import', async (req, res) => {
+  const client = getAuthedClient();
+  if (!client) {
+    return res.status(401).json({ error: 'Google Drive not connected' });
+  }
+
+  // Set up SSE
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+  });
+
+  function sendSSE(event, data) {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  }
+
+  try {
+    // Refresh token if needed
+    const tokenInfo = client.credentials;
+    if (tokenInfo.expiry_date && tokenInfo.expiry_date < Date.now()) {
+      const { credentials } = await client.refreshAccessToken();
+      saveSetting('gdrive_access_token', credentials.access_token);
+      saveSetting('gdrive_token_expiry', String(credentials.expiry_date || 0));
+    }
+
+    const drive = google.drive({ version: 'v3', auth: client });
+
+    // Get user info for account linking
+    const about = await drive.about.get({ fields: 'user' });
+    const userEmail = about.data.user.emailAddress;
+    const userName = about.data.user.displayName;
+    const account = getOrCreateGDriveAccount(userEmail, userName);
+
+    sendSSE('progress', { status: 'scanning', message: 'Scanning Google Drive for photos and videos...' });
+
+    // List all image and video files from Drive
+    let allFiles = [];
+    let pageToken = null;
+
+    do {
+      const listParams = {
+        q: "(mimeType contains 'image/' or mimeType contains 'video/') and trashed = false",
+        fields: 'nextPageToken, files(id, name, mimeType, size, imageMediaMetadata, createdTime)',
+        pageSize: 100,
+        spaces: 'drive',
+      };
+      if (pageToken) listParams.pageToken = pageToken;
+
+      const listResult = await drive.files.list(listParams);
+      allFiles = allFiles.concat(listResult.data.files || []);
+      pageToken = listResult.data.nextPageToken;
+    } while (pageToken);
+
+    // Filter out already-imported files (by source_id = Drive file ID)
+    const newFiles = allFiles.filter(f => {
+      const existing = queryOne('SELECT id FROM media WHERE source_id = ?', [f.id]);
+      return !existing;
+    });
+
+    const total = newFiles.length;
+    sendSSE('progress', {
+      status: 'importing',
+      message: `Found ${allFiles.length} files, ${total} new to import`,
+      total,
+      current: 0,
+      skipped: allFiles.length - total,
+    });
+
+    if (total === 0) {
+      sendSSE('done', {
+        message: 'No new files to import',
+        imported: 0,
+        skipped: allFiles.length,
+        failed: 0,
+      });
+      res.end();
+      return;
+    }
+
+    ensureDirs();
+
+    let imported = 0;
+    let failed = 0;
+
+    for (let i = 0; i < newFiles.length; i++) {
+      const file = newFiles[i];
+
+      try {
+        sendSSE('progress', {
+          status: 'importing',
+          message: `Importing: ${file.name}`,
+          total,
+          current: i + 1,
+          fileName: file.name,
+        });
+
+        // Download file from Drive
+        const fileId = uuidv4();
+        const ext = getExtFromMime(file.mimeType) || path.extname(file.name) || '.jpg';
+        const storedName = `${fileId}${ext}`;
+        const filePath = path.join(DATA_DIR, 'uploads', 'originals', storedName);
+
+        const response = await drive.files.get(
+          { fileId: file.id, alt: 'media' },
+          { responseType: 'stream' }
+        );
+
+        // Write stream to file
+        await new Promise((resolve, reject) => {
+          const dest = fs.createWriteStream(filePath);
+          response.data.pipe(dest);
+          dest.on('finish', resolve);
+          dest.on('error', reject);
+        });
+
+        const fileStats = fs.statSync(filePath);
+        const isVideo = file.mimeType.startsWith('video/');
+        const type = isVideo ? 'video' : 'photo';
+
+        // Extract metadata for images
+        let meta = {};
+        if (!isVideo) {
+          meta = await extractMetadata(filePath);
+        }
+
+        // Use Drive metadata as fallback
+        if (!meta.width && file.imageMediaMetadata) {
+          meta.width = file.imageMediaMetadata.width || null;
+          meta.height = file.imageMediaMetadata.height || null;
+        }
+
+        // Generate thumbnail for images
+        let hasThumbnail = 0;
+        if (!isVideo) {
+          const thumbPath = path.join(DATA_DIR, 'uploads', 'thumbnails', fileId + '.jpg');
+          hasThumbnail = (await generateThumbnail(filePath, thumbPath)) ? 1 : 0;
+        }
+
+        // Insert into media table
+        run(
+          `INSERT INTO media (id, account_id, person_name, person_email, type,
+            original_name, stored_name, mime_type, size_bytes,
+            width, height, date_taken, latitude, longitude,
+            camera_make, camera_model, has_thumbnail, source_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            fileId, account.id, account.name, account.email, type,
+            file.name, storedName, file.mimeType, fileStats.size,
+            meta.width || null, meta.height || null,
+            meta.dateTaken || file.createdTime || new Date().toISOString(),
+            meta.latitude || null, meta.longitude || null,
+            meta.cameraMake || null, meta.cameraModel || null,
+            hasThumbnail, file.id,
+          ]
+        );
+
+        imported++;
+      } catch (importErr) {
+        console.error(`Failed to import ${file.name}:`, importErr.message);
+        failed++;
+      }
+    }
+
+    // Record in transfer history
+    const totalSize = queryOne(
+      "SELECT COALESCE(SUM(size_bytes), 0) as total FROM media WHERE source_id IS NOT NULL AND account_id = ?",
+      [account.id]
+    );
+
+    run(
+      'INSERT INTO transfer_history (id, type, description, file_count, size_bytes, status) VALUES (?, ?, ?, ?, ?, ?)',
+      [
+        uuidv4(),
+        'import',
+        `Imported ${imported} files from Google Drive`,
+        imported,
+        totalSize ? totalSize.total : 0,
+        failed === 0 ? 'complete' : 'partial',
+      ]
+    );
+
+    sendSSE('done', {
+      message: `Import complete: ${imported} imported, ${failed} failed`,
+      imported,
+      skipped: allFiles.length - total,
+      failed,
+    });
+
+    res.end();
+  } catch (err) {
+    console.error('Import error:', err.message);
+    sendSSE('error', { message: 'Import failed: ' + err.message });
+    res.end();
   }
 });
 

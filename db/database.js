@@ -31,6 +31,9 @@ async function initDatabase() {
   const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf-8');
   database.run(schema);
 
+  // Migration: add source_id column if missing
+  try { database.run("ALTER TABLE media ADD COLUMN source_id TEXT"); } catch(e) { /* column already exists */ }
+
   // Seed admin password if not set
   const result = database.exec("SELECT value FROM settings WHERE key = 'admin_password'");
   if (result.length === 0) {
