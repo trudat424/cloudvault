@@ -231,7 +231,8 @@ function initModals() {
   $('#icloudModalClose').addEventListener('click', () => closeModal('icloudModal'));
   $('#icloudModal .modal-backdrop').addEventListener('click', () => closeModal('icloudModal'));
 
-  $('#appleOAuthBtn').addEventListener('click', handleAppleOAuth);
+  $('#importContinueBtn').addEventListener('click', handleImportContinue);
+  initImportPickers();
 
   // Google Drive
   $('#connectGDriveBtn').addEventListener('click', () => {
@@ -249,9 +250,18 @@ function openICloudModal() {
   $('#icloudStep1').style.display = '';
   $('#icloudStep2').style.display = 'none';
   $('#icloudStep3').style.display = 'none';
-  // Reset upload state
-  const fileList = $('#uploadFileList');
-  if (fileList) fileList.style.display = 'none';
+  // Clear previous import state
+  _importFiles.forEach(entry => { if (entry.objectUrl) URL.revokeObjectURL(entry.objectUrl); });
+  _importFiles.clear();
+  $('#importUserName').value = '';
+  $('#importUserEmail').value = '';
+  $('#importPreviewGrid').innerHTML = '';
+  $('#importPreviewContainer').style.display = 'none';
+  $('#importSelectedBtn').disabled = true;
+  $('#importSelectedBtn').innerHTML = `
+    <svg viewBox="0 0 24 24" fill="currentColor" width="16"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+    Import Selected (0)
+  `;
   openModal('icloudModal');
 }
 
@@ -266,36 +276,247 @@ function closeModal(id) {
 }
 
 // ────────────────────────────
-// iCLOUD CONNECTION (API-backed)
+// IMPORT MEDIA (replaces simulated iCloud)
 // ────────────────────────────
-async function handleAppleOAuth() {
+
+// Map<string, { file: File, selected: boolean, objectUrl: string|null }>
+let _importFiles = new Map();
+
+async function handleImportContinue() {
+  const nameVal = $('#importUserName').value.trim();
+  if (!nameVal) {
+    showToast('Please enter your name', 'error');
+    $('#importUserName').focus();
+    return;
+  }
+
+  const emailVal = $('#importUserEmail').value.trim();
+
   // Step 1 -> Step 2: show loading
   $('#icloudStep1').style.display = 'none';
   $('#icloudStep2').style.display = '';
 
   try {
-    // Server picks a random simulated account
-    const account = await API.post('/accounts', {});
+    const account = await API.post('/accounts', { name: nameVal, email: emailVal || undefined });
 
     state.connectedAccounts.push(account);
     state.currentUserAccountIds.push(account.id);
     renderConnectedAccounts();
 
-    // Step 2 -> Step 3: show success with upload zone
+    // Step 2 -> Step 3: file selection
     $('#icloudStep2').style.display = 'none';
     $('#icloudStep3').style.display = '';
-    $('#authSuccessName').textContent = account.name;
-    $('#authSuccessEmail').textContent = account.email;
 
-    // Store account ID for upload
+    // Render identity bar
+    $('#importIdentityBar').innerHTML = `
+      <span>Importing as: <strong>${account.name}</strong>${account.email ? ` (${account.email})` : ''}</span>
+      <span class="edit-link" id="importEditIdentity">Edit</span>
+    `;
+    $('#importEditIdentity').addEventListener('click', () => {
+      $('#icloudStep3').style.display = 'none';
+      $('#icloudStep1').style.display = '';
+      $('#importUserName').value = account.name;
+      $('#importUserEmail').value = account.email.includes('@imported.local') ? '' : account.email;
+    });
+
+    // Store account ID
     $('#icloudStep3').dataset.accountId = account.id;
 
-    showToast(`Connected to ${account.name}'s iCloud`, 'success');
+    // Hide folder picker if not supported
+    if (!('webkitdirectory' in document.createElement('input'))) {
+      $('#pickFolderBtn').style.display = 'none';
+    }
+
+    showToast(`Account created for ${account.name}`, 'success');
   } catch (err) {
-    showToast('Failed to connect: ' + err.message, 'error');
+    showToast('Failed to create account: ' + err.message, 'error');
     $('#icloudStep2').style.display = 'none';
     $('#icloudStep1').style.display = '';
   }
+}
+
+function initImportPickers() {
+  const fileInput = document.getElementById('fileInput');
+  const folderInput = document.getElementById('folderInput');
+
+  if ($('#pickFilesBtn')) {
+    $('#pickFilesBtn').addEventListener('click', () => fileInput.click());
+  }
+  if ($('#pickFolderBtn')) {
+    $('#pickFolderBtn').addEventListener('click', () => folderInput.click());
+  }
+
+  fileInput.addEventListener('change', (e) => {
+    addFilesToPreview(Array.from(e.target.files));
+    e.target.value = ''; // allow re-selecting same files
+  });
+
+  folderInput.addEventListener('change', (e) => {
+    const mediaFiles = Array.from(e.target.files).filter(f =>
+      f.type.startsWith('image/') || f.type.startsWith('video/') ||
+      f.name.toLowerCase().endsWith('.heic') || f.name.toLowerCase().endsWith('.heif')
+    );
+    addFilesToPreview(mediaFiles);
+    e.target.value = '';
+  });
+
+  // Drag and drop on the upload zone
+  const zone = document.getElementById('uploadZone');
+  if (zone) {
+    zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('drag-over'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+    zone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      zone.classList.remove('drag-over');
+      const mediaFiles = Array.from(e.dataTransfer.files).filter(f =>
+        f.type.startsWith('image/') || f.type.startsWith('video/') ||
+        f.name.toLowerCase().endsWith('.heic') || f.name.toLowerCase().endsWith('.heif')
+      );
+      addFilesToPreview(mediaFiles);
+    });
+  }
+
+  // Toggle all button
+  if ($('#importToggleAllBtn')) {
+    $('#importToggleAllBtn').addEventListener('click', toggleAllImportFiles);
+  }
+
+  // Import selected button
+  if ($('#importSelectedBtn')) {
+    $('#importSelectedBtn').addEventListener('click', importSelectedFiles);
+  }
+}
+
+function getFileKey(file) {
+  return `${file.name}|${file.size}|${file.lastModified}`;
+}
+
+function addFilesToPreview(files) {
+  const MAX_PREVIEWS = 200;
+
+  for (const file of files) {
+    const key = getFileKey(file);
+    if (_importFiles.has(key)) continue; // deduplicate
+
+    let objectUrl = null;
+    if (file.type.startsWith('image/') && _importFiles.size < MAX_PREVIEWS) {
+      objectUrl = URL.createObjectURL(file);
+    }
+
+    _importFiles.set(key, { file, selected: true, objectUrl });
+  }
+
+  renderPreviewGrid();
+}
+
+function renderPreviewGrid() {
+  const container = $('#importPreviewContainer');
+  const grid = $('#importPreviewGrid');
+
+  if (_importFiles.size === 0) {
+    container.style.display = 'none';
+    updateImportButton();
+    return;
+  }
+
+  container.style.display = '';
+  let html = '';
+  let count = 0;
+
+  for (const [key, entry] of _importFiles) {
+    count++;
+    if (count > 200) break;
+
+    const selectedClass = entry.selected ? 'selected' : 'deselected';
+    const thumbContent = entry.objectUrl
+      ? `<img src="${entry.objectUrl}" alt="${entry.file.name}" onerror="this.parentElement.innerHTML='<div class=\\'preview-placeholder\\'><svg viewBox=\\'0 0 20 20\\' fill=\\'currentColor\\'><path fill-rule=\\'evenodd\\' d=\\'M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z\\' clip-rule=\\'evenodd\\'/></svg></div>'" />`
+      : entry.file.type.startsWith('video/')
+        ? `<div class="preview-placeholder video"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"/></svg></div>`
+        : `<div class="preview-placeholder"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"/></svg></div>`;
+
+    html += `
+      <div class="import-preview-item ${selectedClass}" data-key="${key}" title="${entry.file.name}">
+        ${thumbContent}
+        <div class="import-preview-check">
+          <svg viewBox="0 0 12 12" fill="white" width="10" height="10"><path d="M10 3L4.5 8.5 2 6" stroke="white" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+      </div>
+    `;
+  }
+
+  if (_importFiles.size > 200) {
+    html += `<div class="import-preview-overflow">+${_importFiles.size - 200} more</div>`;
+  }
+
+  grid.innerHTML = html;
+
+  // Attach click handlers
+  grid.querySelectorAll('.import-preview-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const key = item.dataset.key;
+      const entry = _importFiles.get(key);
+      if (!entry) return;
+      entry.selected = !entry.selected;
+      item.classList.toggle('selected', entry.selected);
+      item.classList.toggle('deselected', !entry.selected);
+      updateImportSummary();
+      updateImportButton();
+    });
+  });
+
+  updateImportSummary();
+  updateImportButton();
+}
+
+function updateImportSummary() {
+  const selected = Array.from(_importFiles.values()).filter(e => e.selected);
+  const totalBytes = selected.reduce((s, e) => s + e.file.size, 0);
+  const totalMB = (totalBytes / (1024 * 1024)).toFixed(1);
+  $('#importSelectionSummary').textContent = `${selected.length} of ${_importFiles.size} files selected (${totalMB} MB)`;
+
+  // Update toggle button text
+  const allSelected = selected.length === _importFiles.size;
+  $('#importToggleAllBtn').textContent = allSelected ? 'Deselect All' : 'Select All';
+}
+
+function updateImportButton() {
+  const selected = Array.from(_importFiles.values()).filter(e => e.selected);
+  const btn = $('#importSelectedBtn');
+  btn.disabled = selected.length === 0;
+  btn.innerHTML = `
+    <svg viewBox="0 0 24 24" fill="currentColor" width="16"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+    Import Selected (${selected.length})
+  `;
+}
+
+function toggleAllImportFiles() {
+  const allSelected = Array.from(_importFiles.values()).every(e => e.selected);
+  const newState = !allSelected;
+  _importFiles.forEach(entry => { entry.selected = newState; });
+  renderPreviewGrid();
+}
+
+function importSelectedFiles() {
+  const accountId = $('#icloudStep3').dataset.accountId;
+  if (!accountId) {
+    showToast('No account connected', 'error');
+    return;
+  }
+
+  const selectedFiles = Array.from(_importFiles.values())
+    .filter(e => e.selected)
+    .map(e => e.file);
+
+  if (selectedFiles.length === 0) {
+    showToast('No files selected', 'error');
+    return;
+  }
+
+  // Clean up object URLs
+  _importFiles.forEach(entry => { if (entry.objectUrl) URL.revokeObjectURL(entry.objectUrl); });
+  _importFiles.clear();
+
+  startUpload(accountId, selectedFiles);
 }
 
 // ────────────────────────────
@@ -536,58 +757,13 @@ async function removeAccount(id) {
 }
 
 // ────────────────────────────
-// FILE UPLOAD
+// FILE UPLOAD (topbar button)
 // ────────────────────────────
-let _selectedFiles = [];
-
 function initUpload() {
-  const zone = document.getElementById('uploadZone');
-  const fileInput = document.getElementById('fileInput');
-
-  if (!zone || !fileInput) return;
-
-  // Click to browse
-  zone.addEventListener('click', (e) => {
-    if (e.target.closest('#icloudSyncNowBtn')) return;
-    if (e.target.closest('.upload-zone-files')) return;
-    fileInput.click();
-  });
-
-  // File input change
-  fileInput.addEventListener('change', (e) => {
-    _selectedFiles = Array.from(e.target.files);
-    updateFileCount(_selectedFiles);
-  });
-
-  // Drag and drop
-  zone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    zone.classList.add('drag-over');
-  });
-  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
-  zone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    zone.classList.remove('drag-over');
-    _selectedFiles = Array.from(e.dataTransfer.files).filter(
-      (f) => f.type.startsWith('image/') || f.type.startsWith('video/')
-    );
-    updateFileCount(_selectedFiles);
-  });
-
-  // Upload button
-  $('#icloudSyncNowBtn').addEventListener('click', () => {
-    const accountId = $('#icloudStep3').dataset.accountId;
-    if (!accountId) {
-      showToast('No account connected', 'error');
-      return;
-    }
-    startUpload(accountId, _selectedFiles);
-  });
-
   // Topbar Upload button
   $('#syncAllBtn').addEventListener('click', () => {
     if (state.connectedAccounts.length === 0) {
-      showToast('Connect an iCloud account first', 'error');
+      showToast('Import media first', 'error');
       openICloudModal();
       return;
     }
@@ -597,18 +773,6 @@ function initUpload() {
       showPersonPicker();
     }
   });
-}
-
-function updateFileCount(files) {
-  const listEl = $('#uploadFileList');
-  const countEl = $('#uploadFileCount');
-  if (files.length > 0) {
-    const totalMB = (files.reduce((s, f) => s + f.size, 0) / (1024 * 1024)).toFixed(1);
-    listEl.style.display = '';
-    countEl.textContent = `${files.length} files selected (${totalMB} MB)`;
-  } else {
-    listEl.style.display = 'none';
-  }
 }
 
 function quickUpload(accountId) {

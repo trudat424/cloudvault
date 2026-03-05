@@ -1280,6 +1280,216 @@ img { display: block; max-width: 100%; }
   margin: 0 0 12px 0 !important;
 }
 
+/* Import Media — new file picker + preview */
+.icloud-modal-card { max-width: 520px; }
+
+.import-form-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.import-form-fields .form-field input {
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  transition: border-color 0.2s;
+}
+
+.import-form-fields .form-field input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.import-form-fields .form-field input::placeholder {
+  color: var(--text-muted);
+}
+
+.import-identity-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--bg-tertiary, var(--bg-primary));
+  border-radius: var(--radius-sm);
+  margin-bottom: 12px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.import-identity-bar .edit-link {
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.import-identity-bar .edit-link:hover {
+  text-decoration: underline;
+}
+
+.import-picker-buttons {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.import-pick-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.import-pick-btn:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.import-pick-btn svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.upload-zone-compact {
+  padding: 14px !important;
+  margin-bottom: 12px;
+}
+
+.upload-zone-compact .upload-zone-content {
+  flex-direction: row;
+  gap: 8px;
+}
+
+.upload-zone-compact .upload-zone-text {
+  font-size: 0.8rem;
+}
+
+.import-preview-container {
+  margin-bottom: 12px;
+}
+
+.import-preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.import-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-primary);
+}
+
+.import-preview-item {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: all 0.15s;
+}
+
+.import-preview-item.selected {
+  border-color: var(--accent);
+}
+
+.import-preview-item.deselected {
+  opacity: 0.3;
+  border-color: transparent;
+}
+
+.import-preview-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.import-preview-check {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.import-preview-item.selected .import-preview-check {
+  opacity: 1;
+}
+
+.import-preview-item:hover .import-preview-check {
+  opacity: 0.6;
+}
+
+.import-preview-item.selected:hover .import-preview-check {
+  opacity: 1;
+}
+
+.preview-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary, var(--bg-secondary));
+  color: var(--text-muted);
+}
+
+.preview-placeholder svg {
+  width: 28px;
+  height: 28px;
+  opacity: 0.4;
+}
+
+.preview-placeholder.video svg {
+  color: var(--accent);
+  opacity: 0.6;
+}
+
+.import-preview-overflow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  background: var(--bg-tertiary, var(--bg-secondary));
+  border-radius: var(--radius-sm);
+  aspect-ratio: 1;
+}
+
 .modal-note {
   font-size: 0.7rem;
   color: var(--text-muted);

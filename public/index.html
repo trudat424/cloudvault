@@ -67,7 +67,7 @@
       <p class="sidebar-label">Connections</p>
       <button class="connect-btn icloud-btn" id="connectICloudBtn">
         <svg viewBox="0 0 24 24" fill="currentColor" width="18"><path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg>
-        <span>Connect iCloud</span>
+        <span>Import Media</span>
       </button>
       <button class="connect-btn gdrive-btn" id="connectGDriveBtn">
         <svg viewBox="0 0 24 24" fill="currentColor" width="18"><path d="M7.71 3.5L1.15 15l3.43 5.97L11.14 9.47 7.71 3.5zm1.14 0l6.86 11.94H22.85L16 3.5H8.85zM15.29 16.5H1.71L5.14 22.47h13.72l-3.57-5.97z"/></svg>
@@ -184,10 +184,10 @@
             </svg>
           </div>
           <h2>Get started with CloudVault</h2>
-          <p>Connect your team's iCloud accounts to sync all photos and videos in one place.</p>
+          <p>Import your team's photos and videos from any device into one place.</p>
           <button class="cta-btn" id="ctaConnect">
             <svg viewBox="0 0 24 24" fill="currentColor" width="20"><path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg>
-            Connect iCloud Account
+            Import Photos & Videos
           </button>
         </div>
       </div>
@@ -418,7 +418,7 @@
     </div>
   </div>
 
-  <!-- ════════ iCLOUD CONNECT MODAL ════════ -->
+  <!-- ════════ IMPORT MEDIA MODAL ════════ -->
   <div class="modal" id="icloudModal">
     <div class="modal-backdrop"></div>
     <div class="modal-card icloud-modal-card">
@@ -427,55 +427,77 @@
       </button>
       <div class="icloud-sign-in">
         <div class="apple-logo">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+          <svg viewBox="0 0 48 48" fill="none" width="56" height="56">
+            <rect x="6" y="10" width="36" height="28" rx="4" stroke="var(--accent)" stroke-width="2" fill="none"/>
+            <path d="M24 28V18m0 0l-5 5m5-5l5 5" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
         </div>
-        <h2>Connect iCloud</h2>
-        <p>Sign in with your Apple ID to sync photos and videos</p>
+        <h2>Import Media</h2>
+        <p>Add photos and videos from your device</p>
 
-        <!-- Step 1: OAuth-style one-click -->
+        <!-- Step 1: Identity form -->
         <div id="icloudStep1">
-          <button class="apple-sign-in-btn" id="appleOAuthBtn">
-            <svg viewBox="0 0 24 24" fill="currentColor" width="16"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
-            Sign in with Apple
+          <div class="import-form-fields">
+            <div class="form-field">
+              <input type="text" id="importUserName" placeholder="Your name" required autocomplete="name" />
+            </div>
+            <div class="form-field">
+              <input type="email" id="importUserEmail" placeholder="Email (optional)" autocomplete="email" />
+            </div>
+          </div>
+          <button class="apple-sign-in-btn" id="importContinueBtn">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="16"><path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+            Continue
           </button>
-          <p class="modal-note">You'll be redirected to Apple's secure sign-in page.</p>
+          <p class="modal-note">Your iCloud photos sync to your device automatically. Select them from your local library in the next step.</p>
         </div>
 
-        <!-- Step 2: Simulated Apple auth loading -->
+        <!-- Step 2: Brief loading -->
         <div id="icloudStep2" style="display:none;">
           <div class="icloud-auth-loading">
             <div class="auth-spinner"></div>
-            <p>Connecting to Apple ID...</p>
+            <p>Setting up...</p>
           </div>
         </div>
 
-        <!-- Step 3: Auth complete, upload files -->
+        <!-- Step 3: File selection + preview -->
         <div id="icloudStep3" style="display:none;">
-          <div class="icloud-auth-success">
-            <svg viewBox="0 0 24 24" fill="none" width="40" height="40"><circle cx="12" cy="12" r="10" stroke="var(--green)" stroke-width="2"/><path d="M8 12l3 3 5-5" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <p class="auth-success-name" id="authSuccessName"></p>
-            <p class="auth-success-email" id="authSuccessEmail"></p>
+          <div class="import-identity-bar" id="importIdentityBar"></div>
 
-            <div class="upload-zone" id="uploadZone">
-              <div class="upload-zone-content">
-                <svg viewBox="0 0 48 48" fill="none" width="40" height="40">
-                  <path d="M24 32V16m0 0l-8 8m8-8l8 8" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M38 30c2-1.5 4-4 4-7 0-5-4-9-9-9-.6 0-1.2.1-1.8.2C29.3 9.8 25 7 20 7c-6.6 0-12 5.4-12 12 0 .6.1 1.2.2 1.8C5.3 22 3 25 3 28.5 3 33 6.6 36 11 36h27" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round"/>
-                </svg>
-                <p class="upload-zone-text">Drag & drop photos and videos here</p>
-                <p class="upload-zone-subtext">or click to browse (JPG, PNG, HEIC, MP4, MOV)</p>
-                <input type="file" id="fileInput" multiple accept="image/*,video/*,.heic,.heif" style="display:none;" />
-              </div>
-              <div class="upload-zone-files" id="uploadFileList" style="display:none;">
-                <p id="uploadFileCount">0 files selected</p>
-              </div>
-            </div>
-
-            <button class="apple-sign-in-btn" id="icloudSyncNowBtn">
-              <svg viewBox="0 0 24 24" fill="currentColor" width="16"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
-              Upload Files
+          <div class="import-picker-buttons">
+            <button class="import-pick-btn" id="pickFilesBtn">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="16"><path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"/></svg>
+              Select Files
             </button>
+            <button class="import-pick-btn" id="pickFolderBtn">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="16"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>
+              Select Folder
+            </button>
+            <input type="file" id="fileInput" multiple accept="image/*,video/*,.heic,.heif" style="display:none;" />
+            <input type="file" id="folderInput" webkitdirectory multiple style="display:none;" />
           </div>
+
+          <div class="upload-zone upload-zone-compact" id="uploadZone">
+            <div class="upload-zone-content">
+              <svg viewBox="0 0 48 48" fill="none" width="28" height="28">
+                <path d="M24 32V16m0 0l-8 8m8-8l8 8" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <p class="upload-zone-text">or drag & drop files here</p>
+            </div>
+          </div>
+
+          <div class="import-preview-container" id="importPreviewContainer" style="display:none;">
+            <div class="import-preview-header">
+              <span id="importSelectionSummary">0 files selected</span>
+              <button class="small-btn" id="importToggleAllBtn">Deselect All</button>
+            </div>
+            <div class="import-preview-grid" id="importPreviewGrid"></div>
+          </div>
+
+          <button class="apple-sign-in-btn" id="importSelectedBtn" disabled>
+            <svg viewBox="0 0 24 24" fill="currentColor" width="16"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+            Import Selected (0)
+          </button>
         </div>
       </div>
     </div>
