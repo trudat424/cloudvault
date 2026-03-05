@@ -60,7 +60,6 @@ router.get('/auth', (req, res) => {
   const authUrl = client.generateAuthUrl({
     access_type: 'offline',
     scope: SCOPES,
-    prompt: 'consent',
   });
 
   res.redirect(authUrl);
