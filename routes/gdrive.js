@@ -5,14 +5,14 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { queryOne, queryAll, run } = require('../db/database');
-const { DATA_DIR, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI } = require('../config');
+const { DATA_DIR, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, GOOGLE_API_KEY } = require('../config');
 const { generateThumbnail } = require('../services/thumbnail');
 const { extractMetadata } = require('../services/metadata');
 
-// Scopes: drive.file for export, drive.readonly for import
+// Only drive.file scope — non-sensitive, no "unverified app" warning
+// Google Picker grants per-file access under this scope
 const SCOPES = [
   'https://www.googleapis.com/auth/drive.file',
-  'https://www.googleapis.com/auth/drive.readonly',
 ];
 
 function getOAuth2Client() {
@@ -114,10 +114,18 @@ router.get('/status', async (req, res) => {
     // Verify token works by getting user info
     const drive = google.drive({ version: 'v3', auth: client });
     const about = await drive.about.get({ fields: 'user' });
+
+    // Refresh credentials to get latest access token
+    const creds = client.credentials;
+
     res.json({
       connected: true,
       email: about.data.user.emailAddress,
       name: about.data.user.displayName,
+      // Picker config — frontend needs these to open Google Picker
+      accessToken: creds.access_token,
+      apiKey: GOOGLE_API_KEY,
+      clientId: GOOGLE_CLIENT_ID,
     });
   } catch (err) {
     console.error('GDrive status check failed:', err.message);
@@ -319,11 +327,17 @@ function getExtFromMime(mimeType) {
   return map[mimeType] || '.jpg';
 }
 
-// GET /api/gdrive/import — import photos/videos from Google Drive (SSE)
-router.get('/import', async (req, res) => {
+// POST /api/gdrive/import — import Picker-selected files from Google Drive (SSE)
+// Body: { files: [{ id, name, mimeType }] }
+router.post('/import', async (req, res) => {
   const client = getAuthedClient();
   if (!client) {
     return res.status(401).json({ error: 'Google Drive not connected' });
+  }
+
+  const { files } = req.body;
+  if (!files || !Array.isArray(files) || files.length === 0) {
+    return res.status(400).json({ error: 'No files provided' });
   }
 
   // Set up SSE
@@ -354,46 +368,28 @@ router.get('/import', async (req, res) => {
     const userName = about.data.user.displayName;
     const account = getOrCreateGDriveAccount(userEmail, userName);
 
-    sendSSE('progress', { status: 'scanning', message: 'Scanning Google Drive for photos and videos...' });
-
-    // List all image and video files from Drive
-    let allFiles = [];
-    let pageToken = null;
-
-    do {
-      const listParams = {
-        q: "(mimeType contains 'image/' or mimeType contains 'video/') and trashed = false",
-        fields: 'nextPageToken, files(id, name, mimeType, size, imageMediaMetadata, createdTime)',
-        pageSize: 100,
-        spaces: 'drive',
-      };
-      if (pageToken) listParams.pageToken = pageToken;
-
-      const listResult = await drive.files.list(listParams);
-      allFiles = allFiles.concat(listResult.data.files || []);
-      pageToken = listResult.data.nextPageToken;
-    } while (pageToken);
-
     // Filter out already-imported files (by source_id = Drive file ID)
-    const newFiles = allFiles.filter(f => {
+    const newFiles = files.filter(f => {
       const existing = queryOne('SELECT id FROM media WHERE source_id = ?', [f.id]);
       return !existing;
     });
 
     const total = newFiles.length;
+    const skipped = files.length - total;
+
     sendSSE('progress', {
       status: 'importing',
-      message: `Found ${allFiles.length} files, ${total} new to import`,
+      message: `${files.length} selected, ${total} new to import`,
       total,
       current: 0,
-      skipped: allFiles.length - total,
+      skipped,
     });
 
     if (total === 0) {
       sendSSE('done', {
-        message: 'No new files to import',
+        message: 'All selected files already imported',
         imported: 0,
-        skipped: allFiles.length,
+        skipped,
         failed: 0,
       });
       res.end();
@@ -446,12 +442,6 @@ router.get('/import', async (req, res) => {
           meta = await extractMetadata(filePath);
         }
 
-        // Use Drive metadata as fallback
-        if (!meta.width && file.imageMediaMetadata) {
-          meta.width = file.imageMediaMetadata.width || null;
-          meta.height = file.imageMediaMetadata.height || null;
-        }
-
         // Generate thumbnail for images
         let hasThumbnail = 0;
         if (!isVideo) {
@@ -470,7 +460,7 @@ router.get('/import', async (req, res) => {
             fileId, account.id, account.name, account.email, type,
             file.name, storedName, file.mimeType, fileStats.size,
             meta.width || null, meta.height || null,
-            meta.dateTaken || file.createdTime || new Date().toISOString(),
+            meta.dateTaken || new Date().toISOString(),
             meta.latitude || null, meta.longitude || null,
             meta.cameraMake || null, meta.cameraModel || null,
             hasThumbnail, file.id,
@@ -505,7 +495,7 @@ router.get('/import', async (req, res) => {
     sendSSE('done', {
       message: `Import complete: ${imported} imported, ${failed} failed`,
       imported,
-      skipped: allFiles.length - total,
+      skipped,
       failed,
     });
 

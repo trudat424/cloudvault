@@ -45,6 +45,9 @@ const state = {
   gdriveConnected: false,
   gdriveEmail: '',
   gdriveName: '',
+  gdriveAccessToken: '',
+  gdriveApiKey: '',
+  gdriveClientId: '',
   media: [],
   selectedMedia: new Set(),
   currentView: 'dashboard',
@@ -120,6 +123,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (gdrive.connected) {
       state.gdriveEmail = gdrive.email || '';
       state.gdriveName = gdrive.name || '';
+      state.gdriveAccessToken = gdrive.accessToken || '';
+      state.gdriveApiKey = gdrive.apiKey || '';
+      state.gdriveClientId = gdrive.clientId || '';
     }
 
     // Track all accounts as "ours" for this session
@@ -329,7 +335,59 @@ async function handleGDriveDisconnect() {
 }
 
 async function startGDriveImport() {
+  // Open Google Picker to let user select files
+  if (!state.gdriveAccessToken || !state.gdriveApiKey) {
+    showToast('Picker not ready. Please reconnect Google Drive.', 'error');
+    return;
+  }
+
   closeModal('gdriveModal');
+
+  // Load the Google Picker API
+  try {
+    await new Promise((resolve, reject) => {
+      if (window.google && window.google.picker) {
+        resolve();
+        return;
+      }
+      gapi.load('picker', { callback: resolve, onerror: reject });
+    });
+  } catch (err) {
+    showToast('Failed to load Google Picker', 'error');
+    return;
+  }
+
+  // Build and show the Picker
+  const picker = new google.picker.PickerBuilder()
+    .setOAuthToken(state.gdriveAccessToken)
+    .setDeveloperKey(state.gdriveApiKey)
+    .setAppId(state.gdriveClientId.split('-')[0])
+    .addView(
+      new google.picker.DocsView(google.picker.ViewId.DOCS)
+        .setMimeTypes('image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif,image/bmp,image/tiff,video/mp4,video/quicktime,video/x-msvideo,video/webm,video/3gpp')
+        .setMode(google.picker.DocsViewMode.GRID)
+        .setSelectFolderEnabled(false)
+    )
+    .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
+    .setTitle('Select photos & videos to import')
+    .setCallback(handlePickerResult)
+    .build();
+
+  picker.setVisible(true);
+}
+
+async function handlePickerResult(data) {
+  if (data.action !== google.picker.Action.PICKED) return;
+
+  const selectedFiles = data.docs.map(doc => ({
+    id: doc.id,
+    name: doc.name,
+    mimeType: doc.mimeType,
+  }));
+
+  if (selectedFiles.length === 0) return;
+
+  // Show import progress modal
   openModal('transferModal');
 
   const fill = $('#transferProgressFill');
@@ -339,80 +397,94 @@ async function startGDriveImport() {
 
   titleEl.textContent = 'Importing from Google Drive...';
   fill.style.width = '0%';
-  countEl.textContent = 'Scanning...';
-  statusEl.textContent = 'Looking for photos and videos in your Drive...';
+  countEl.textContent = `0 / ${selectedFiles.length} files`;
+  statusEl.textContent = 'Starting import...';
 
-  const evtSource = new EventSource('/api/gdrive/import');
+  try {
+    // POST to /api/gdrive/import — reads SSE response via fetch + ReadableStream
+    const response = await fetch('/api/gdrive/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ files: selectedFiles }),
+    });
 
-  evtSource.addEventListener('progress', (e) => {
-    const data = JSON.parse(e.data);
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
 
-    if (data.status === 'scanning') {
-      statusEl.textContent = data.message;
-    } else if (data.status === 'importing') {
-      const pct = data.total > 0 ? Math.round((data.current / data.total) * 100) : 0;
-      fill.style.width = pct + '%';
-      countEl.textContent = `${data.current} / ${data.total} files`;
-      statusEl.textContent = data.fileName ? `Importing: ${data.fileName}` : data.message;
-    }
-  });
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-  evtSource.addEventListener('done', (e) => {
-    evtSource.close();
-    const data = JSON.parse(e.data);
+      buffer += decoder.decode(value, { stream: true });
 
-    fill.style.width = '100%';
-    statusEl.textContent = 'Complete!';
-    countEl.textContent = `${data.imported} imported`;
+      // Parse SSE events from buffer
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // keep incomplete line in buffer
 
-    setTimeout(async () => {
-      closeModal('transferModal');
-      fill.style.width = '0%';
-      titleEl.textContent = 'Transferring to Google Drive...';
+      let eventType = '';
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          eventType = line.slice(7).trim();
+        } else if (line.startsWith('data: ')) {
+          const jsonStr = line.slice(6);
+          try {
+            const eventData = JSON.parse(jsonStr);
 
-      if (data.imported > 0) {
-        showToast(`Imported ${data.imported} files from Google Drive`, 'success');
-        // Refresh the gallery
-        await refreshAccounts();
-        await refreshMedia();
-        updateDashboard();
-        renderConnectedAccounts();
-        populateFilterPeople();
+            if (eventType === 'progress') {
+              if (eventData.status === 'importing') {
+                const pct = eventData.total > 0 ? Math.round((eventData.current / eventData.total) * 100) : 0;
+                fill.style.width = pct + '%';
+                countEl.textContent = `${eventData.current} / ${eventData.total} files`;
+                statusEl.textContent = eventData.fileName ? `Importing: ${eventData.fileName}` : eventData.message;
+              }
+            } else if (eventType === 'done') {
+              fill.style.width = '100%';
+              statusEl.textContent = 'Complete!';
+              countEl.textContent = `${eventData.imported} imported`;
 
-        if (state.media.length > 0) {
-          $('#onboarding').style.display = 'none';
-          $('#recentSection').style.display = '';
-          renderRecentMedia();
+              setTimeout(async () => {
+                closeModal('transferModal');
+                fill.style.width = '0%';
+                titleEl.textContent = 'Transferring to Google Drive...';
+
+                if (eventData.imported > 0) {
+                  showToast(`Imported ${eventData.imported} files from Google Drive`, 'success');
+                  await refreshAccounts();
+                  await refreshMedia();
+                  updateDashboard();
+                  renderConnectedAccounts();
+                  populateFilterPeople();
+
+                  if (state.media.length > 0) {
+                    $('#onboarding').style.display = 'none';
+                    $('#recentSection').style.display = '';
+                    renderRecentMedia();
+                  }
+                  if (state.currentView === 'media') renderAllMedia();
+                  if (state.currentView === 'people') renderPeopleGrid();
+                } else {
+                  showToast(eventData.message || 'No new files to import', 'info');
+                }
+              }, 1200);
+            } else if (eventType === 'error') {
+              closeModal('transferModal');
+              fill.style.width = '0%';
+              titleEl.textContent = 'Transferring to Google Drive...';
+              showToast('Import failed: ' + eventData.message, 'error');
+            }
+          } catch (parseErr) {
+            // skip unparseable lines
+          }
         }
-        if (state.currentView === 'media') renderAllMedia();
-        if (state.currentView === 'people') renderPeopleGrid();
-      } else {
-        showToast(data.message || 'No new files to import', 'info');
       }
-
-      addTransferHistory('import', `Imported ${data.imported} files from Google Drive`, 0);
-    }, 1200);
-  });
-
-  evtSource.addEventListener('error', (e) => {
-    // Check if it's an SSE error event with data
-    if (e.data) {
-      const data = JSON.parse(e.data);
-      evtSource.close();
-      closeModal('transferModal');
-      fill.style.width = '0%';
-      titleEl.textContent = 'Transferring to Google Drive...';
-      showToast('Import failed: ' + data.message, 'error');
     }
-  });
-
-  evtSource.onerror = () => {
-    evtSource.close();
+  } catch (err) {
     closeModal('transferModal');
     fill.style.width = '0%';
-    titleEl.textContent = 'Transferring to Google Drive...';
+    $('#transferTitle').textContent = 'Transferring to Google Drive...';
     showToast('Import connection lost. Please try again.', 'error');
-  };
+  }
 }
 
 // ────────────────────────────
