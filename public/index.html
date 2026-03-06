@@ -7,23 +7,11 @@
 
   <!-- Open Graph / Link Preview -->
   <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://cloudvault-agency.netlify.app/" />
   <meta property="og:title" content="CloudVault — Media Sync Hub" />
-  <meta property="og:description" content="Premium media management for social media agencies. Sync from iCloud, organize by person, and export to Google Drive — all in one place." />
-  <meta property="og:image" content="https://cloudvault-agency.netlify.app/og-image.png" />
-  <meta property="og:image:width" content="1200" />
-  <meta property="og:image:height" content="630" />
-  <meta property="og:site_name" content="CloudVault" />
+  <meta property="og:description" content="Upload, organize, and share your media. Simple and secure." />
 
-  <!-- Twitter Card -->
-  <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="CloudVault — Media Sync Hub" />
-  <meta name="twitter:description" content="Premium media management for social media agencies. Sync from iCloud, organize by person, and export to Google Drive." />
-  <meta name="twitter:image" content="https://cloudvault-agency.netlify.app/og-image.png" />
-
-  <!-- General Meta -->
-  <meta name="description" content="Premium media management for social media agencies. Sync from iCloud, organize by person, and export to Google Drive — all in one place." />
-  <meta name="theme-color" content="#0c0c14" />
+  <meta name="description" content="Upload, organize, and share your media. Simple and secure." />
+  <meta name="theme-color" content="#7c3aed" />
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -31,13 +19,77 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <!-- ════════ AUTH GATE (shown when not logged in) ════════ -->
+  <div class="auth-gate" id="authGate">
+    <div class="auth-card">
+      <div class="auth-logo">
+        <svg viewBox="0 0 32 32" fill="none" width="48" height="48"><path d="M16 4C9.373 4 4 9.373 4 16s5.373 12 12 12 12-5.373 12-12S22.627 4 16 4z" fill="url(#g1)" /><path d="M12 14l4-4 4 4M16 10v10" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="g1" x1="4" y1="4" x2="28" y2="28"><stop stop-color="#7c3aed"/><stop offset="1" stop-color="#ec4899"/></linearGradient></defs></svg>
+      </div>
+      <h1 class="auth-title">CloudVault</h1>
+      <p class="auth-subtitle">Your personal media vault</p>
+
+      <!-- SIGNUP FORM -->
+      <form class="auth-form" id="signupForm">
+        <div class="form-field">
+          <input type="text" id="signupUsername" placeholder="Choose a username" required autocomplete="username" />
+        </div>
+        <div class="form-field">
+          <input type="password" id="signupPassword" placeholder="Create a password" required autocomplete="new-password" />
+        </div>
+        <div class="form-field">
+          <input type="text" id="signupName" placeholder="Your display name (optional)" autocomplete="name" />
+        </div>
+        <div class="auth-error" id="signupError" style="display:none;"></div>
+        <button type="submit" class="auth-btn">Create Account</button>
+      </form>
+
+      <!-- LOGIN FORM -->
+      <form class="auth-form" id="loginForm" style="display:none;">
+        <div class="form-field">
+          <input type="text" id="loginUsername" placeholder="Username" required autocomplete="username" />
+        </div>
+        <div class="form-field">
+          <input type="password" id="loginPassword" placeholder="Password" required autocomplete="current-password" />
+        </div>
+        <label class="remember-me">
+          <input type="checkbox" id="rememberMe" checked />
+          <span>Remember me</span>
+        </label>
+        <div class="auth-error" id="loginError" style="display:none;"></div>
+        <button type="submit" class="auth-btn">Log In</button>
+      </form>
+
+      <button class="auth-switch" id="authSwitch">Already have an account? <strong>Log in</strong></button>
+    </div>
+  </div>
+
+  <!-- ════════ SHARE VIEW (public, shown for share links) ════════ -->
+  <div class="share-public-view" id="sharePublicView" style="display:none;">
+    <div class="share-public-header">
+      <div class="auth-logo" style="margin-bottom:0;">
+        <svg viewBox="0 0 32 32" fill="none" width="32" height="32"><path d="M16 4C9.373 4 4 9.373 4 16s5.373 12 12 12 12-5.373 12-12S22.627 4 16 4z" fill="url(#g2)" /><path d="M12 14l4-4 4 4M16 10v10" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="g2" x1="4" y1="4" x2="28" y2="28"><stop stop-color="#7c3aed"/><stop offset="1" stop-color="#ec4899"/></linearGradient></defs></svg>
+      </div>
+      <h2 id="shareOwnerName">Shared Media</h2>
+      <p class="share-subtitle">Shared via CloudVault</p>
+    </div>
+    <div class="media-grid" id="shareMediaGrid"></div>
+  </div>
+
   <!-- ════════ SIDEBAR ════════ -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-brand">
       <div class="brand-icon">
-        <svg viewBox="0 0 32 32" fill="none"><path d="M16 4C9.373 4 4 9.373 4 16s5.373 12 12 12 12-5.373 12-12S22.627 4 16 4z" fill="url(#g1)" /><path d="M12 14l4-4 4 4M16 10v10" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="g1" x1="4" y1="4" x2="28" y2="28"><stop stop-color="#E8853D"/><stop offset="1" stop-color="#D4533B"/></linearGradient></defs></svg>
+        <svg viewBox="0 0 32 32" fill="none"><path d="M16 4C9.373 4 4 9.373 4 16s5.373 12 12 12 12-5.373 12-12S22.627 4 16 4z" fill="url(#g3)" /><path d="M12 14l4-4 4 4M16 10v10" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="g3" x1="4" y1="4" x2="28" y2="28"><stop stop-color="#7c3aed"/><stop offset="1" stop-color="#ec4899"/></linearGradient></defs></svg>
       </div>
       <span class="brand-text">CloudVault</span>
+    </div>
+
+    <div class="sidebar-user" id="sidebarUser">
+      <div class="sidebar-user-avatar" id="sidebarUserAvatar">?</div>
+      <div class="sidebar-user-info">
+        <span class="sidebar-user-name" id="sidebarUserName">Guest</span>
+        <button class="sidebar-logout-btn" id="sidebarLogout">Log out</button>
+      </div>
     </div>
 
     <nav class="sidebar-nav">
@@ -45,13 +97,13 @@
         <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/></svg>
         <span>Dashboard</span>
       </a>
-      <a href="#" class="nav-item" data-view="people">
-        <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zm8 0a3 3 0 11-6 0 3 3 0 016 0zm-4.07 11c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/></svg>
-        <span>People</span>
-      </a>
       <a href="#" class="nav-item" data-view="media">
         <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"/></svg>
         <span>All Media</span>
+      </a>
+      <a href="#" class="nav-item" data-view="sharing">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path d="M15 8a3 3 0 10-2.977-2.63l-4.94 2.47a3 3 0 100 4.319l4.94 2.47a3 3 0 10.895-1.789l-4.94-2.47a3.027 3.027 0 000-.74l4.94-2.47C13.456 7.68 14.19 8 15 8z"/></svg>
+        <span>Sharing</span>
       </a>
       <a href="#" class="nav-item" data-view="downloads">
         <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
@@ -65,16 +117,10 @@
 
     <div class="sidebar-connections">
       <p class="sidebar-label">Connections</p>
-      <button class="connect-btn icloud-btn" id="connectICloudBtn">
-        <svg viewBox="0 0 24 24" fill="currentColor" width="18"><path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg>
-        <span>Import Media</span>
-      </button>
       <button class="connect-btn gdrive-btn" id="connectGDriveBtn">
         <svg viewBox="0 0 24 24" fill="currentColor" width="18"><path d="M7.71 3.5L1.15 15l3.43 5.97L11.14 9.47 7.71 3.5zm1.14 0l6.86 11.94H22.85L16 3.5H8.85zM15.29 16.5H1.71L5.14 22.47h13.72l-3.57-5.97z"/></svg>
         <span>Connect Google Drive</span>
       </button>
-
-      <div class="connected-accounts" id="connectedAccounts"></div>
     </div>
 
     <button class="theme-toggle" id="themeToggle">
@@ -99,20 +145,12 @@
       </button>
       <div class="search-box">
         <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
-        <input type="text" placeholder="Search media, people, tags..." id="searchInput" />
+        <input type="text" placeholder="Search media..." id="searchInput" />
       </div>
       <div class="topbar-actions">
-        <button class="action-btn sync-btn" id="syncAllBtn" title="Upload">
-          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
-          <span>Upload</span>
-        </button>
-        <button class="action-btn download-all-btn" id="downloadAllBtn" title="Download All">
+        <button class="action-btn download-all-btn" id="downloadAllBtn" title="Download">
           <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
           <span>Download</span>
-        </button>
-        <button class="action-btn gdrive-transfer-btn" id="gdriveTransferBtn" title="Move to Google Drive">
-          <svg viewBox="0 0 20 20" fill="currentColor"><path d="M7.71 3.5L1.15 15l3.43 5.97L11.14 9.47 7.71 3.5zm1.14 0l6.86 11.94H22.85L16 3.5H8.85zM15.29 16.5H1.71L5.14 22.47h13.72l-3.57-5.97z"/></svg>
-          <span>To Drive</span>
         </button>
       </div>
     </header>
@@ -121,7 +159,7 @@
     <div class="sync-progress-bar" id="syncProgress">
       <div class="sync-progress-inner">
         <div class="sync-info">
-          <span class="sync-label" id="syncLabel">Syncing from iCloud...</span>
+          <span class="sync-label" id="syncLabel">Uploading...</span>
           <span class="sync-percent" id="syncPercent">0%</span>
         </div>
         <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
@@ -132,7 +170,7 @@
     <section class="view active" id="viewDashboard">
       <div class="view-header">
         <h1 class="view-title">Dashboard</h1>
-        <p class="view-subtitle">Your media command center</p>
+        <p class="view-subtitle">Your media at a glance</p>
       </div>
 
       <div class="stats-grid">
@@ -155,15 +193,6 @@
           </div>
         </div>
         <div class="stat-card">
-          <div class="stat-icon people-icon">
-            <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zm8 0a3 3 0 11-6 0 3 3 0 016 0zm-4.07 11c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/></svg>
-          </div>
-          <div class="stat-info">
-            <span class="stat-value" id="totalPeople">0</span>
-            <span class="stat-label">People</span>
-          </div>
-        </div>
-        <div class="stat-card">
           <div class="stat-icon storage-icon">
             <svg viewBox="0 0 20 20" fill="currentColor"><path d="M2 5a2 2 0 012-2h12a2 2 0 012 2v2a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm14 1a1 1 0 11-2 0 1 1 0 012 0zM2 13a2 2 0 012-2h12a2 2 0 012 2v2a2 2 0 01-2 2H4a2 2 0 01-2-2v-2zm14 1a1 1 0 11-2 0 1 1 0 012 0z"/></svg>
           </div>
@@ -174,53 +203,25 @@
         </div>
       </div>
 
-      <!-- WELCOME / ONBOARDING (shown when no accounts connected) -->
+      <!-- WELCOME / ONBOARDING (shown when no media) -->
       <div class="onboarding" id="onboarding">
         <div class="onboarding-card">
           <div class="onboarding-illustration">
             <svg viewBox="0 0 200 160" fill="none">
-              <rect x="30" y="40" width="140" height="90" rx="12" fill="#1a1a2e" stroke="#E8853D" stroke-width="1.5"/>
-              <circle cx="100" cy="75" r="20" fill="#E8853D" fill-opacity="0.15" stroke="#E8853D" stroke-width="1.5"/>
-              <path d="M95 75l4 4 8-8" stroke="#E8853D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M60 105h80" stroke="#2a2a4a" stroke-width="1"/>
-              <circle cx="70" cy="115" r="4" fill="#E8853D" fill-opacity="0.4"/>
-              <circle cx="85" cy="115" r="4" fill="#D4533B" fill-opacity="0.4"/>
-              <circle cx="100" cy="115" r="4" fill="#E8853D" fill-opacity="0.4"/>
+              <rect x="30" y="40" width="140" height="90" rx="12" fill="var(--bg-tertiary)" stroke="var(--accent)" stroke-width="1.5"/>
+              <circle cx="100" cy="75" r="20" fill="var(--accent)" fill-opacity="0.15" stroke="var(--accent)" stroke-width="1.5"/>
+              <path d="M95 75l4 4 8-8" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </div>
-          <h2>Get started with CloudVault</h2>
-          <p>Import your team's photos and videos from any device into one place.</p>
-          <button class="cta-btn" id="ctaConnect">
-            <svg viewBox="0 0 24 24" fill="currentColor" width="20"><path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg>
-            Import Photos & Videos
-          </button>
+          <h2>Welcome to CloudVault!</h2>
+          <p>Tap the <strong>+</strong> button to upload your first photos & videos.</p>
         </div>
       </div>
 
-      <!-- RECENT ACTIVITY (shown after content exists) -->
+      <!-- RECENT ACTIVITY -->
       <div class="recent-section" id="recentSection" style="display:none;">
         <h2 class="section-title">Recent Uploads</h2>
         <div class="media-grid" id="recentGrid"></div>
-      </div>
-    </section>
-
-    <!-- ═══ VIEW: PEOPLE ═══ -->
-    <section class="view" id="viewPeople">
-      <div class="view-header">
-        <h1 class="view-title">People</h1>
-        <p class="view-subtitle">Browse media by team member</p>
-      </div>
-      <div class="people-grid" id="peopleGrid"></div>
-
-      <!-- PERSON DETAIL (shown when clicking a person) -->
-      <div class="person-detail" id="personDetail" style="display:none;">
-        <button class="back-btn" id="backToPeople">
-          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd"/></svg>
-          Back to People
-        </button>
-        <div class="person-header" id="personHeader"></div>
-        <div class="person-filters" id="personFilters"></div>
-        <div class="media-grid" id="personMediaGrid"></div>
       </div>
     </section>
 
@@ -228,7 +229,7 @@
     <section class="view" id="viewMedia">
       <div class="view-header">
         <h1 class="view-title">All Media</h1>
-        <p class="view-subtitle">Browse and filter all synced content</p>
+        <p class="view-subtitle">Browse and filter your content</p>
       </div>
 
       <div class="filter-bar" id="filterBar">
@@ -238,12 +239,6 @@
             <option value="all">All Types</option>
             <option value="photo">Photos</option>
             <option value="video">Videos</option>
-          </select>
-        </div>
-        <div class="filter-group">
-          <label>Person</label>
-          <select id="filterPerson">
-            <option value="all">Everyone</option>
           </select>
         </div>
         <div class="filter-group">
@@ -276,6 +271,45 @@
       <div class="media-grid selectable" id="allMediaGrid"></div>
     </section>
 
+    <!-- ═══ VIEW: SHARING ═══ -->
+    <section class="view" id="viewSharing">
+      <div class="view-header">
+        <h1 class="view-title">Sharing</h1>
+        <p class="view-subtitle">Share your media with others</p>
+      </div>
+
+      <!-- Share Link Section -->
+      <div class="share-section">
+        <div class="share-section-header">
+          <h2 class="section-title">Share Link</h2>
+          <p class="share-desc">Create a link anyone can use to view your media (read-only).</p>
+        </div>
+        <div id="shareLinkArea" class="share-link-area"></div>
+      </div>
+
+      <!-- Share With Users Section -->
+      <div class="share-section">
+        <div class="share-section-header">
+          <h2 class="section-title">Share With Users</h2>
+          <p class="share-desc">Give another CloudVault user access to your media.</p>
+        </div>
+        <div class="share-user-search">
+          <input type="text" id="shareUserSearch" placeholder="Search by username..." />
+          <div class="share-user-results" id="shareUserResults"></div>
+        </div>
+        <div id="sharedWithList" class="shared-with-list"></div>
+      </div>
+
+      <!-- Shared With Me Section -->
+      <div class="share-section">
+        <div class="share-section-header">
+          <h2 class="section-title">Shared With Me</h2>
+          <p class="share-desc">Media others have shared with you.</p>
+        </div>
+        <div id="sharedWithMeList" class="shared-with-me-list"></div>
+      </div>
+    </section>
+
     <!-- ═══ VIEW: DOWNLOADS ═══ -->
     <section class="view" id="viewDownloads">
       <div class="view-header">
@@ -289,7 +323,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </div>
           <h3>Download All Media</h3>
-          <p>Download everything as a ZIP archive organized by person and date.</p>
+          <p>Download everything as a ZIP archive.</p>
           <button class="cta-btn" id="downloadZipBtn">Download ZIP</button>
         </div>
         <div class="download-card">
@@ -297,16 +331,8 @@
             <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7.71 3.5L1.15 15l3.43 5.97L11.14 9.47 7.71 3.5zm1.14 0l6.86 11.94H22.85L16 3.5H8.85zM15.29 16.5H1.71L5.14 22.47h13.72l-3.57-5.97z"/></svg>
           </div>
           <h3>Transfer to Google Drive</h3>
-          <p>Move all synced content directly to your Google Drive folder.</p>
+          <p>Move all synced content to your Google Drive.</p>
           <button class="cta-btn" id="transferDriveBtn">Transfer All</button>
-        </div>
-        <div class="download-card">
-          <div class="dl-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </div>
-          <h3>Selective Export</h3>
-          <p>Go to All Media, select specific items, then download or transfer.</p>
-          <button class="cta-btn secondary" id="goToMediaBtn">Go to Media</button>
         </div>
       </div>
 
@@ -320,33 +346,28 @@
 
     <!-- ═══ VIEW: ADMIN ═══ -->
     <section class="view" id="viewAdmin">
-      <!-- LOGIN GATE (shown when not authenticated) -->
       <div class="admin-login" id="adminLogin">
         <div class="admin-login-card">
           <div class="admin-lock-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </div>
           <h2>Admin Access</h2>
-          <p>Enter the admin password to manage people and settings.</p>
+          <p>Enter the admin password to manage settings.</p>
           <form id="adminLoginForm">
             <div class="form-field">
               <input type="password" id="adminPasswordInput" placeholder="Enter admin password" required autocomplete="off" />
             </div>
             <div class="admin-error" id="adminError" style="display:none;">Incorrect password. Try again.</div>
-            <button type="submit" class="cta-btn admin-login-btn">
-              <svg viewBox="0 0 20 20" fill="currentColor" width="16"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg>
-              Unlock Admin Panel
-            </button>
+            <button type="submit" class="cta-btn admin-login-btn">Unlock Admin Panel</button>
           </form>
         </div>
       </div>
 
-      <!-- ADMIN PANEL (shown after login) -->
       <div class="admin-panel" id="adminPanel" style="display:none;">
         <div class="view-header admin-header">
           <div>
             <h1 class="view-title">Admin Panel</h1>
-            <p class="view-subtitle">Manage people, accounts, and media</p>
+            <p class="view-subtitle">Manage accounts and media</p>
           </div>
           <button class="action-btn admin-logout-btn" id="adminLogoutBtn">
             <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 001 1h12a1 1 0 001-1V4a1 1 0 00-1-1H3zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clip-rule="evenodd"/></svg>
@@ -354,10 +375,8 @@
           </button>
         </div>
 
-        <!-- Admin Stats -->
         <div class="admin-stats-row" id="adminStats"></div>
 
-        <!-- All Media Browser -->
         <div class="admin-section">
           <div class="admin-section-header">
             <h2 class="section-title">All Media</h2>
@@ -370,29 +389,15 @@
           <div class="admin-media-grid" id="adminMediaGrid"></div>
         </div>
 
-        <!-- People Management -->
         <div class="admin-section">
           <div class="admin-section-header">
-            <h2 class="section-title">People Management</h2>
-            <p class="admin-section-desc">Remove people and all their associated media from CloudVault.</p>
-          </div>
-          <div class="admin-people-list" id="adminPeopleList">
-            <div class="empty-state">No people synced yet. Connect iCloud and sync first.</div>
-          </div>
-        </div>
-
-        <!-- Connected Accounts Management -->
-        <div class="admin-section">
-          <div class="admin-section-header">
-            <h2 class="section-title">Connected Accounts</h2>
-            <p class="admin-section-desc">Manage iCloud and Google Drive connections.</p>
+            <h2 class="section-title">Accounts</h2>
           </div>
           <div class="admin-accounts-list" id="adminAccountsList">
-            <div class="empty-state">No accounts connected.</div>
+            <div class="empty-state">No accounts.</div>
           </div>
         </div>
 
-        <!-- Danger Zone -->
         <div class="admin-section danger-zone">
           <div class="admin-section-header">
             <h2 class="section-title" style="color: var(--red);">Danger Zone</h2>
@@ -401,14 +406,14 @@
             <div class="danger-item">
               <div>
                 <strong>Remove All Media</strong>
-                <p>Delete all synced photos and videos. This cannot be undone.</p>
+                <p>Delete all uploaded photos and videos. Cannot be undone.</p>
               </div>
               <button class="danger-btn" id="clearAllMediaBtn">Clear All Media</button>
             </div>
             <div class="danger-item">
               <div>
                 <strong>Disconnect All Accounts</strong>
-                <p>Remove all iCloud and Google Drive connections.</p>
+                <p>Remove all connections.</p>
               </div>
               <button class="danger-btn" id="disconnectAllBtn">Disconnect All</button>
             </div>
@@ -417,6 +422,12 @@
       </div>
     </section>
   </main>
+
+  <!-- ════════ FAB UPLOAD BUTTON ════════ -->
+  <button class="fab-upload" id="fabUpload" title="Upload photos & videos">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+  </button>
+  <input type="file" id="fabFileInput" multiple accept="image/*,video/*,.heic,.heif" style="display:none;" />
 
   <!-- ════════ LIGHTBOX MODAL ════════ -->
   <div class="lightbox" id="lightbox">
@@ -436,91 +447,6 @@
     </div>
   </div>
 
-  <!-- ════════ IMPORT MEDIA MODAL ════════ -->
-  <div class="modal" id="icloudModal">
-    <div class="modal-backdrop"></div>
-    <div class="modal-card icloud-modal-card">
-      <button class="modal-close" id="icloudModalClose">
-        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
-      </button>
-      <div class="icloud-sign-in">
-        <div class="apple-logo">
-          <svg viewBox="0 0 48 48" fill="none" width="56" height="56">
-            <rect x="6" y="10" width="36" height="28" rx="4" stroke="var(--accent)" stroke-width="2" fill="none"/>
-            <path d="M24 28V18m0 0l-5 5m5-5l5 5" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </div>
-        <h2>Import Media</h2>
-        <p>Add photos and videos from your device</p>
-
-        <!-- Step 1: Identity form -->
-        <div id="icloudStep1">
-          <div class="import-form-fields">
-            <div class="form-field">
-              <input type="text" id="importUserName" placeholder="Your name" required autocomplete="name" />
-            </div>
-            <div class="form-field">
-              <input type="email" id="importUserEmail" placeholder="Email (optional)" autocomplete="email" />
-            </div>
-          </div>
-          <button class="apple-sign-in-btn" id="importContinueBtn">
-            <svg viewBox="0 0 20 20" fill="currentColor" width="16"><path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
-            Continue
-          </button>
-          <p class="modal-note">Your iCloud photos sync to your device automatically. Select them from your local library in the next step.</p>
-        </div>
-
-        <!-- Step 2: Brief loading -->
-        <div id="icloudStep2" style="display:none;">
-          <div class="icloud-auth-loading">
-            <div class="auth-spinner"></div>
-            <p>Setting up...</p>
-          </div>
-        </div>
-
-        <!-- Step 3: File selection + preview -->
-        <div id="icloudStep3" style="display:none;">
-          <div class="import-identity-bar" id="importIdentityBar"></div>
-
-          <div class="import-picker-buttons">
-            <button class="import-pick-btn" id="pickFilesBtn">
-              <svg viewBox="0 0 20 20" fill="currentColor" width="16"><path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"/></svg>
-              Select Files
-            </button>
-            <button class="import-pick-btn" id="pickFolderBtn">
-              <svg viewBox="0 0 20 20" fill="currentColor" width="16"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>
-              Select Folder
-            </button>
-            <input type="file" id="fileInput" multiple accept="image/*,video/*,.heic,.heif" style="display:none;" />
-            <input type="file" id="folderInput" webkitdirectory multiple style="display:none;" />
-          </div>
-
-          <div class="upload-zone upload-zone-compact" id="uploadZone">
-            <div class="upload-zone-content">
-              <svg viewBox="0 0 48 48" fill="none" width="28" height="28">
-                <path d="M24 32V16m0 0l-8 8m8-8l8 8" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-              <p class="upload-zone-text">or drag & drop files here</p>
-            </div>
-          </div>
-
-          <div class="import-preview-container" id="importPreviewContainer" style="display:none;">
-            <div class="import-preview-header">
-              <span id="importSelectionSummary">0 files selected</span>
-              <button class="small-btn" id="importToggleAllBtn">Deselect All</button>
-            </div>
-            <div class="import-preview-grid" id="importPreviewGrid"></div>
-          </div>
-
-          <button class="apple-sign-in-btn" id="importSelectedBtn" disabled>
-            <svg viewBox="0 0 24 24" fill="currentColor" width="16"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
-            Import Selected (0)
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- ════════ GOOGLE DRIVE CONNECT MODAL ════════ -->
   <div class="modal" id="gdriveModal">
     <div class="modal-backdrop"></div>
@@ -529,7 +455,6 @@
         <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
       </button>
 
-      <!-- State 1: Not connected — show sign-in -->
       <div class="gdrive-sign-in" id="gdriveSignIn">
         <div class="gdrive-logo">
           <svg viewBox="0 0 48 48" fill="none" width="56">
@@ -544,10 +469,8 @@
           <svg viewBox="0 0 24 24" width="18"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
           Sign in with Google
         </button>
-        <p class="modal-note">Import your photos from Drive or transfer CloudVault media to Drive.</p>
       </div>
 
-      <!-- State 2: Connected — show import/actions -->
       <div class="gdrive-connected" id="gdriveConnected" style="display:none;">
         <div class="gdrive-logo">
           <svg viewBox="0 0 48 48" fill="none" width="56">
@@ -561,12 +484,12 @@
           <span id="gdriveUserEmail" style="color: var(--text-secondary); font-size: 0.9rem;">Connected</span>
         </div>
         <h2>Google Drive Connected</h2>
-        <p>Import your photos and videos from Google Drive into CloudVault</p>
+        <p>Import photos and videos from Google Drive</p>
         <button class="google-sign-in-btn" id="gdriveImportBtn" style="background: #34A853;">
           <svg viewBox="0 0 20 20" fill="currentColor" width="18"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
           Import from Google Drive
         </button>
-        <button class="gdrive-disconnect-btn" id="gdriveDisconnectBtn" style="margin-top: 12px; background: none; border: 1px solid var(--border); color: var(--text-muted); padding: 8px 20px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;">
+        <button class="gdrive-disconnect-btn" id="gdriveDisconnectBtn" style="margin-top: 12px; background: none; border: 1px solid var(--border); color: var(--text-muted); padding: 8px 20px; border-radius: 8px; cursor: pointer; font-size: 0.85rem;">
           Disconnect
         </button>
       </div>
@@ -593,13 +516,13 @@
       <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/></svg>
       <span>Home</span>
     </a>
-    <a href="#" class="mobile-nav-item" data-view="people">
-      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zm8 0a3 3 0 11-6 0 3 3 0 016 0zm-4.07 11c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/></svg>
-      <span>People</span>
-    </a>
     <a href="#" class="mobile-nav-item" data-view="media">
       <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"/></svg>
       <span>Media</span>
+    </a>
+    <a href="#" class="mobile-nav-item" data-view="sharing">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M15 8a3 3 0 10-2.977-2.63l-4.94 2.47a3 3 0 100 4.319l4.94 2.47a3 3 0 10.895-1.789l-4.94-2.47a3.027 3.027 0 000-.74l4.94-2.47C13.456 7.68 14.19 8 15 8z"/></svg>
+      <span>Share</span>
     </a>
     <a href="#" class="mobile-nav-item" data-view="downloads">
       <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>

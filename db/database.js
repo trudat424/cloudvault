@@ -37,6 +37,11 @@ async function initDatabase() {
   // Migration: add password column to accounts for per-user viewing password
   try { database.run("ALTER TABLE accounts ADD COLUMN password TEXT DEFAULT NULL"); } catch(e) { /* column already exists */ }
 
+  // Migration: add username column to accounts
+  try { database.run("ALTER TABLE accounts ADD COLUMN username TEXT"); } catch(e) { /* column already exists */ }
+  // Create unique index on username (if not exists)
+  try { database.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_username ON accounts(username) WHERE username IS NOT NULL"); } catch(e) { /* index already exists */ }
+
   // Seed admin password if not set
   const result = database.exec("SELECT value FROM settings WHERE key = 'admin_password'");
   if (result.length === 0) {
