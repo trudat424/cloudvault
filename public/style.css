@@ -3539,8 +3539,10 @@ img { display: block; max-width: 100%; }
    PUBLIC SHARE VIEW
    ═══════════════════════════════════════════ */
 .share-public-view {
-  min-height: 100vh;
-  width: 100%;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  overflow-y: auto;
   padding: 32px 20px;
   background: var(--bg-primary);
 }

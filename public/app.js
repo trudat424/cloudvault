@@ -326,9 +326,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('#sidebarLogout').addEventListener('click', logout);
 });
 
-async function refreshMedia() {
+async function refreshMedia(fetchAll = false) {
   try {
-    state.media = await API.get('/media');
+    if (fetchAll || state.adminLoggedIn) {
+      state.media = await API.get('/media');
+    } else if (state.currentUser) {
+      state.media = await API.get(`/media?account_id=${state.currentUser.id}`);
+    } else {
+      state.media = [];
+    }
   } catch (err) {
     console.error('Failed to load media:', err);
   }
@@ -576,10 +582,6 @@ async function startGDriveImport() {
       .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
       .setTitle('Select photos & videos to import')
       .setCallback(handlePickerResult);
-
-    if (state.gdriveApiKey) {
-      builder.setDeveloperKey(state.gdriveApiKey);
-    }
 
     const picker = builder.build();
     picker.setVisible(true);
@@ -1415,7 +1417,7 @@ async function handleAdminLogin() {
       input.value = '';
       $('#adminLogin').style.display = 'none';
       $('#adminPanel').style.display = '';
-      await refreshMedia();
+      await refreshMedia(true);
       await refreshAccounts();
       renderAdminPanel();
       updateDashboard();
