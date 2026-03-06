@@ -34,6 +34,9 @@ async function initDatabase() {
   // Migration: add source_id column if missing
   try { database.run("ALTER TABLE media ADD COLUMN source_id TEXT"); } catch(e) { /* column already exists */ }
 
+  // Migration: add password column to accounts for per-user viewing password
+  try { database.run("ALTER TABLE accounts ADD COLUMN password TEXT DEFAULT NULL"); } catch(e) { /* column already exists */ }
+
   // Seed admin password if not set
   const result = database.exec("SELECT value FROM settings WHERE key = 'admin_password'");
   if (result.length === 0) {

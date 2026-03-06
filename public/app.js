@@ -57,12 +57,129 @@ const state = {
   transferHistory: [],
   adminLoggedIn: false,
   currentUserAccountIds: [],
+  unlockedPersonIds: [],
 };
 
 function getVisibleMedia() {
   if (state.adminLoggedIn) return state.media;
   if (state.currentUserAccountIds.length === 0) return [];
   return state.media.filter((m) => state.currentUserAccountIds.includes(m.personId));
+}
+
+// ── Per-User Viewing Password ──
+
+function isPersonLocked(accountId) {
+  if (state.adminLoggedIn) return false;
+  const account = state.connectedAccounts.find(a => a.id === accountId);
+  if (!account || !account.hasPassword) return false;
+  return !state.unlockedPersonIds.includes(accountId);
+}
+
+function showPasswordGate(personId, onSuccess) {
+  const account = state.connectedAccounts.find(a => a.id === personId);
+  const personName = account ? account.name : 'this person';
+
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.innerHTML = `
+    <div class="confirm-card password-gate-card">
+      <div class="password-gate-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="32" height="32">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+          <path d="M7 11V7a5 5 0 0110 0v4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <h3>Password Required</h3>
+      <p>${personName}'s content is password-protected.</p>
+      <div class="form-field">
+        <input type="password" class="password-gate-input" placeholder="Enter viewing password" autocomplete="off" />
+      </div>
+      <div class="password-gate-error" style="display:none;">Incorrect password. Try again.</div>
+      <div class="confirm-actions">
+        <button class="confirm-cancel">Cancel</button>
+        <button class="confirm-ok password-unlock-btn">Unlock</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+  const input = overlay.querySelector('.password-gate-input');
+  const errorEl = overlay.querySelector('.password-gate-error');
+  input.focus();
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') overlay.querySelector('.password-unlock-btn').click();
+  });
+
+  overlay.querySelector('.confirm-cancel').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+  overlay.querySelector('.password-unlock-btn').addEventListener('click', async () => {
+    const password = input.value;
+    if (!password) { input.focus(); return; }
+    try {
+      const result = await API.post(`/accounts/${personId}/verify-password`, { password });
+      if (result.success) {
+        state.unlockedPersonIds.push(personId);
+        overlay.remove();
+        onSuccess();
+      }
+    } catch (err) {
+      errorEl.style.display = '';
+      input.value = '';
+      input.focus();
+    }
+  });
+}
+
+function showSetPasswordDialog(accountId, accountName, onComplete) {
+  const account = state.connectedAccounts.find(a => a.id === accountId);
+  const hasExisting = account && account.hasPassword;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.innerHTML = `
+    <div class="confirm-card">
+      <h3>${hasExisting ? 'Change' : 'Set'} Viewing Password</h3>
+      <p>Set a password that others must enter to view ${accountName}'s content. Leave blank to remove.</p>
+      <div class="form-field">
+        <input type="password" class="set-password-input" placeholder="${hasExisting ? 'New password (blank to remove)' : 'Enter a password'}" autocomplete="off" />
+      </div>
+      <div class="confirm-actions">
+        <button class="confirm-cancel">Cancel</button>
+        <button class="confirm-ok password-save-btn">Save</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+  const input = overlay.querySelector('.set-password-input');
+  input.focus();
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') overlay.querySelector('.password-save-btn').click();
+  });
+
+  overlay.querySelector('.confirm-cancel').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+  overlay.querySelector('.password-save-btn').addEventListener('click', async () => {
+    const password = input.value.trim();
+    try {
+      const result = await API.post(`/accounts/${accountId}/password`, { password: password || null });
+      overlay.remove();
+      if (account) account.hasPassword = result.hasPassword;
+      showToast(
+        result.hasPassword
+          ? `Viewing password set for ${accountName}`
+          : `Viewing password removed for ${accountName}`,
+        result.hasPassword ? 'success' : 'info'
+      );
+      if (onComplete) onComplete(result.hasPassword);
+    } catch (err) {
+      showToast('Failed to update password: ' + err.message, 'error');
+    }
+  });
 }
 
 async function refreshMedia() {
@@ -89,9 +206,56 @@ const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
 
 // ────────────────────────────
+// THEME TOGGLE
+// ────────────────────────────
+function initThemeToggle() {
+  const saved = localStorage.getItem('cloudvault-theme');
+  if (saved === 'dark') {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    updateThemeUI(true);
+  }
+
+  const btn = document.getElementById('themeToggle');
+  if (btn) {
+    btn.addEventListener('click', () => {
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      if (isDark) {
+        document.documentElement.removeAttribute('data-theme');
+        localStorage.setItem('cloudvault-theme', 'light');
+        updateThemeUI(false);
+      } else {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        localStorage.setItem('cloudvault-theme', 'dark');
+        updateThemeUI(true);
+      }
+    });
+  }
+}
+
+function updateThemeUI(isDark) {
+  const icon = document.getElementById('themeIcon');
+  const label = document.getElementById('themeLabel');
+  if (icon) {
+    icon.innerHTML = isDark
+      ? '<circle cx="10" cy="10" r="5"/><path d="M10 1v2m0 14v2m-7-9H1m18 0h-2m-1.343-5.657L14.243 5.757m-8.486 8.486L4.343 15.657m11.314 0l-1.414-1.414M5.757 5.757L4.343 4.343"/>'
+      : '<path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>';
+    icon.setAttribute('fill', isDark ? 'none' : 'currentColor');
+    if (isDark) {
+      icon.setAttribute('stroke', 'currentColor');
+      icon.setAttribute('stroke-width', '1.5');
+    } else {
+      icon.removeAttribute('stroke');
+      icon.removeAttribute('stroke-width');
+    }
+  }
+  if (label) label.textContent = isDark ? 'Light Mode' : 'Dark Mode';
+}
+
+// ────────────────────────────
 // INIT
 // ────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
+  initThemeToggle();
   initNavigation();
   initModals();
   initUpload();
@@ -310,8 +474,18 @@ async function handleImportContinue() {
     // Render identity bar
     $('#importIdentityBar').innerHTML = `
       <span>Importing as: <strong>${account.name}</strong>${account.email ? ` (${account.email})` : ''}</span>
-      <span class="edit-link" id="importEditIdentity">Edit</span>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <span class="edit-link" id="importSetPassword">${account.hasPassword ? 'Change Password' : 'Set Password'}</span>
+        <span class="edit-link" id="importEditIdentity">Edit</span>
+      </div>
     `;
+    $('#importSetPassword').addEventListener('click', () => {
+      showSetPasswordDialog(account.id, account.name, (hasPassword) => {
+        account.hasPassword = hasPassword;
+        const el = document.getElementById('importSetPassword');
+        if (el) el.textContent = hasPassword ? 'Change Password' : 'Set Password';
+      });
+    });
     $('#importEditIdentity').addEventListener('click', () => {
       $('#icloudStep3').style.display = 'none';
       $('#icloudStep1').style.display = '';
@@ -556,9 +730,9 @@ async function handleGDriveDisconnect() {
 }
 
 async function startGDriveImport() {
-  // Open Google Picker to let user select files
-  if (!state.gdriveAccessToken || !state.gdriveApiKey) {
-    showToast('Picker not ready. Please reconnect Google Drive.', 'error');
+  // Only OAuth token is required; API key is optional for quota attribution
+  if (!state.gdriveAccessToken) {
+    showToast('Not authenticated. Please reconnect Google Drive.', 'error');
     return;
   }
 
@@ -579,25 +753,43 @@ async function startGDriveImport() {
   }
 
   // Build and show the Picker
-  const picker = new google.picker.PickerBuilder()
-    .setOAuthToken(state.gdriveAccessToken)
-    .setDeveloperKey(state.gdriveApiKey)
-    .setAppId(state.gdriveClientId.split('-')[0])
-    .addView(
-      new google.picker.DocsView(google.picker.ViewId.DOCS)
-        .setMimeTypes('image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif,image/bmp,image/tiff,video/mp4,video/quicktime,video/x-msvideo,video/webm,video/3gpp')
-        .setMode(google.picker.DocsViewMode.GRID)
-        .setSelectFolderEnabled(false)
-    )
-    .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
-    .setTitle('Select photos & videos to import')
-    .setCallback(handlePickerResult)
-    .build();
+  try {
+    const builder = new google.picker.PickerBuilder()
+      .setOAuthToken(state.gdriveAccessToken)
+      .setAppId(state.gdriveClientId.split('-')[0])
+      .addView(
+        new google.picker.DocsView(google.picker.ViewId.DOCS)
+          .setMimeTypes('image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif,image/bmp,image/tiff,video/mp4,video/quicktime,video/x-msvideo,video/webm,video/3gpp')
+          .setMode(google.picker.DocsViewMode.GRID)
+          .setSelectFolderEnabled(false)
+      )
+      .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
+      .setTitle('Select photos & videos to import')
+      .setCallback(handlePickerResult);
 
-  picker.setVisible(true);
+    // Only set developer key if configured and non-empty
+    if (state.gdriveApiKey) {
+      builder.setDeveloperKey(state.gdriveApiKey);
+    }
+
+    const picker = builder.build();
+    picker.setVisible(true);
+  } catch (err) {
+    console.error('Picker build error:', err);
+    showToast('Failed to open file picker: ' + (err.message || 'Unknown error'), 'error');
+  }
 }
 
 async function handlePickerResult(data) {
+  if (data.action === google.picker.Action.CANCEL) return;
+
+  // Handle Picker errors
+  if (data.action === google.picker.Action.ERROR || data.action === 'error') {
+    console.error('Google Picker error:', JSON.stringify(data));
+    showToast('Google Picker error. Check that the Picker API is enabled in Google Cloud Console.', 'error');
+    return;
+  }
+
   if (data.action !== google.picker.Action.PICKED) return;
 
   const selectedFiles = data.docs.map(doc => ({
@@ -720,11 +912,16 @@ function renderConnectedAccounts() {
     : state.connectedAccounts.filter((a) => state.currentUserAccountIds.includes(a.id));
 
   visibleAccounts.forEach((acc) => {
+    const lockOpacity = acc.hasPassword ? '1' : '0.35';
+    const escapedName = acc.name.replace(/'/g, "\\'");
     html += `
       <div class="account-chip" data-id="${acc.id}">
         <span class="dot"></span>
         <span class="name">${acc.name}</span>
         <span class="type">iCloud</span>
+        <button class="account-password-btn" onclick="event.stopPropagation(); showSetPasswordDialog('${acc.id}', '${escapedName}', () => refreshAccounts())" title="${acc.hasPassword ? 'Change viewing password' : 'Set viewing password'}">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="12" height="12" style="opacity:${lockOpacity}"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg>
+        </button>
         <button class="remove-account" onclick="removeAccount('${acc.id}')">
           <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
         </button>
@@ -1108,9 +1305,12 @@ function renderPeopleGrid() {
   }
 
   grid.innerHTML = Array.from(peopleMap.values())
-    .map(
-      (p) => `
-    <div class="person-card" data-person="${p.id}">
+    .map((p) => {
+      const acct = state.connectedAccounts.find(a => a.id === p.id);
+      const showLock = acct && acct.hasPassword && !state.adminLoggedIn;
+      return `
+    <div class="person-card ${showLock ? 'person-locked' : ''}" data-person="${p.id}">
+      ${showLock ? '<div class="person-lock-badge"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg></div>' : ''}
       <div class="person-avatar">${p.avatar}</div>
       <h3>${p.name}</h3>
       <span class="person-email">${p.email}</span>
@@ -1129,8 +1329,8 @@ function renderPeopleGrid() {
         </div>
       </div>
     </div>
-  `
-    )
+  `;
+    })
     .join('');
 
   grid.querySelectorAll('.person-card').forEach((card) => {
@@ -1139,6 +1339,12 @@ function renderPeopleGrid() {
 }
 
 function openPersonDetail(personId) {
+  // Password gate: if this person's content is protected, prompt first
+  if (isPersonLocked(personId)) {
+    showPasswordGate(personId, () => openPersonDetail(personId));
+    return;
+  }
+
   state.currentPerson = personId;
 
   const personMedia = getVisibleMedia().filter((m) => m.personId === personId);

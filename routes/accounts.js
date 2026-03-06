@@ -51,12 +51,48 @@ router.delete('/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// POST /api/accounts/:id/password — set, update, or remove viewing password
+router.post('/:id/password', (req, res) => {
+  const account = queryOne('SELECT * FROM accounts WHERE id = ?', [req.params.id]);
+  if (!account) return res.status(404).json({ error: 'Account not found' });
+
+  const { password } = req.body || {};
+
+  if (!password || !password.trim()) {
+    // Remove password protection
+    run('UPDATE accounts SET password = NULL WHERE id = ?', [req.params.id]);
+    return res.json({ success: true, hasPassword: false });
+  }
+
+  run('UPDATE accounts SET password = ? WHERE id = ?', [password.trim(), req.params.id]);
+  res.json({ success: true, hasPassword: true });
+});
+
+// POST /api/accounts/:id/verify-password — check viewing password
+router.post('/:id/verify-password', (req, res) => {
+  const account = queryOne('SELECT * FROM accounts WHERE id = ?', [req.params.id]);
+  if (!account) return res.status(404).json({ error: 'Account not found' });
+
+  // No password set — always allow
+  if (!account.password) {
+    return res.json({ success: true });
+  }
+
+  const { password } = req.body || {};
+  if (password === account.password) {
+    res.json({ success: true });
+  } else {
+    res.status(401).json({ success: false, error: 'Incorrect password' });
+  }
+});
+
 function mapAccount(row) {
   return {
     id: row.id,
     name: row.name,
     email: row.email,
     type: row.type,
+    hasPassword: !!row.password,
     connectedAt: row.connected_at,
   };
 }

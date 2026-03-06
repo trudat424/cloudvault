@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS accounts (
   name        TEXT NOT NULL,
   email       TEXT NOT NULL UNIQUE,
   type        TEXT NOT NULL DEFAULT 'icloud',
+  password    TEXT DEFAULT NULL,
   connected_at TEXT NOT NULL,
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
