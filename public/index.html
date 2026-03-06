@@ -423,10 +423,23 @@
     </section>
   </main>
 
-  <!-- ════════ FAB UPLOAD BUTTON ════════ -->
-  <button class="fab-upload" id="fabUpload" title="Upload photos & videos">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-  </button>
+  <!-- ════════ FAB UPLOAD MENU ════════ -->
+  <div class="fab-container" id="fabContainer">
+    <div class="fab-backdrop" id="fabBackdrop"></div>
+    <div class="fab-options" id="fabOptions">
+      <button class="fab-option" id="fabGDrive" title="Import from Google Drive">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="22"><path d="M7.71 3.5L1.15 15l3.43 5.97L11.14 9.47 7.71 3.5zm1.14 0l6.86 11.94H22.85L16 3.5H8.85zM15.29 16.5H1.71L5.14 22.47h13.72l-3.57-5.97z"/></svg>
+        <span>Google Drive</span>
+      </button>
+      <button class="fab-option" id="fabDevice" title="Upload from this device">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <span>From Device</span>
+      </button>
+    </div>
+    <button class="fab-upload" id="fabUpload" title="Add media">
+      <svg class="fab-icon-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+  </div>
   <input type="file" id="fabFileInput" multiple accept="image/*,video/*,.heic,.heif" style="display:none;" />
 
   <!-- ════════ LIGHTBOX MODAL ════════ -->

@@ -214,10 +214,10 @@ function logout() {
   $('#authGate').style.display = '';
   $('#sidebar').style.display = '';
   $('#mainContent').style.display = '';
-  $('#fabUpload').style.display = '';
+  $('#fabContainer').style.display = '';
   $('#mobileNav').style.display = '';
   // Reset visibility
-  document.querySelectorAll('.sidebar, .main-content, .fab-upload, .mobile-nav').forEach(el => {
+  document.querySelectorAll('.sidebar, .main-content, .fab-container, .mobile-nav').forEach(el => {
     el.style.display = 'none';
   });
   $('#authGate').style.display = '';
@@ -228,7 +228,7 @@ function showApp() {
   $('#authGate').style.display = 'none';
   $('#sidebar').style.display = '';
   $('#mainContent').style.display = '';
-  $('#fabUpload').style.display = '';
+  $('#fabContainer').style.display = '';
   $('#mobileNav').style.display = '';
 
   // Update sidebar user info
@@ -292,7 +292,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     $('#authGate').style.display = '';
     $('#sidebar').style.display = 'none';
     $('#mainContent').style.display = 'none';
-    $('#fabUpload').style.display = 'none';
+    $('#fabContainer').style.display = 'none';
     $('#mobileNav').style.display = 'none';
   }
 
@@ -439,18 +439,46 @@ function closeModal(id) {
 }
 
 // ────────────────────────────
-// FAB UPLOAD (simple "+" button)
+// FAB UPLOAD MENU (expandable)
 // ────────────────────────────
 function initFabUpload() {
   const fab = $('#fabUpload');
+  const container = $('#fabContainer');
+  const backdrop = $('#fabBackdrop');
   const fileInput = $('#fabFileInput');
 
-  fab.addEventListener('click', () => {
+  function toggleFab() {
     if (!state.currentUser) {
       showToast('Please log in first', 'error');
       return;
     }
+    container.classList.toggle('open');
+  }
+
+  function closeFab() {
+    container.classList.remove('open');
+  }
+
+  fab.addEventListener('click', toggleFab);
+  backdrop.addEventListener('click', closeFab);
+
+  // "From Device" option
+  $('#fabDevice').addEventListener('click', () => {
+    closeFab();
     fileInput.click();
+  });
+
+  // "Google Drive" option
+  $('#fabGDrive').addEventListener('click', () => {
+    closeFab();
+    if (!state.gdriveConnected) {
+      // Not connected yet — open the connect modal
+      updateGDriveModal();
+      openModal('gdriveModal');
+    } else {
+      // Already connected — go straight to Picker
+      startGDriveImport();
+    }
   });
 
   fileInput.addEventListener('change', (e) => {
@@ -1083,7 +1111,7 @@ async function showSharePublicView(token) {
   $('#authGate').style.display = 'none';
   $('#sidebar').style.display = 'none';
   $('#mainContent').style.display = 'none';
-  $('#fabUpload').style.display = 'none';
+  $('#fabContainer').style.display = 'none';
   $('#mobileNav').style.display = 'none';
   $('#sharePublicView').style.display = '';
 
