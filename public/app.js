@@ -1868,8 +1868,64 @@ function handleAdminLogout() {
 function renderAdminPanel() {
   if (!state.adminLoggedIn) return;
   renderAdminStats();
+  renderAdminMedia();
+  initAdminMediaFilters();
   renderAdminPeopleList();
   renderAdminAccountsList();
+}
+
+function initAdminMediaFilters() {
+  document.querySelectorAll('.admin-filter-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('.admin-filter-chip').forEach((c) => c.classList.remove('active'));
+      chip.classList.add('active');
+      renderAdminMedia(chip.dataset.filter);
+    });
+  });
+}
+
+function renderAdminMedia(filter = 'all') {
+  const grid = $('#adminMediaGrid');
+  if (!grid) return;
+
+  let items = [...state.media].sort((a, b) => b.timestamp - a.timestamp);
+
+  if (filter === 'photo') items = items.filter((m) => m.type === 'photo');
+  else if (filter === 'video') items = items.filter((m) => m.type === 'video');
+
+  if (items.length === 0) {
+    grid.innerHTML = '<div class="admin-media-empty">No media uploaded yet.</div>';
+    return;
+  }
+
+  grid.innerHTML = items
+    .map((item, i) => {
+      const delay = Math.min(i * 0.02, 0.4);
+      const thumbContent = item.thumbnail
+        ? `<img src="${item.thumbnail}" alt="${item.name}" loading="lazy" />`
+        : `<div class="admin-media-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="24" height="24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 16l5-5 4 4 4-4 5 5"/><circle cx="8.5" cy="8.5" r="1.5"/></svg></div>`;
+
+      return `
+      <div class="admin-media-thumb" data-id="${item.id}" style="animation-delay:${delay}s">
+        ${thumbContent}
+        <span class="thumb-owner">${item.personName}</span>
+        ${
+          item.type === 'video'
+            ? `<span class="video-indicator"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"/></svg>Video</span>`
+            : ''
+        }
+      </div>
+    `;
+    })
+    .join('');
+
+  // Wire up click to open lightbox
+  grid.querySelectorAll('.admin-media-thumb').forEach((thumb) => {
+    thumb.addEventListener('click', () => {
+      const allIds = items.map((m) => m.id);
+      openLightbox(thumb.dataset.id, allIds);
+    });
+  });
 }
 
 function renderAdminStats() {
