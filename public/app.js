@@ -46,8 +46,6 @@ const state = {
   gdriveEmail: '',
   gdriveName: '',
   gdriveAccessToken: '',
-  gdriveApiKey: '',
-  gdriveClientId: '',
   media: [],
   selectedMedia: new Set(),
   currentView: 'dashboard',
@@ -252,21 +250,20 @@ async function loadAppData() {
       state.gdriveEmail = gdrive.email || '';
       state.gdriveName = gdrive.name || '';
       state.gdriveAccessToken = gdrive.accessToken || '';
-      state.gdriveApiKey = gdrive.apiKey || '';
-      state.gdriveClientId = gdrive.clientId || '';
+      // Update sidebar button to show connected state
+      $('#connectGDriveBtn span').textContent = 'Browse Google Drive';
     }
 
     if (getVisibleMedia().length > 0) {
       $('#onboarding').style.display = 'none';
-      $('#recentSection').style.display = '';
-      renderRecentMedia();
+      $('#dashboardMedia').style.display = '';
+      renderAllMedia();
     }
   } catch (err) {
     console.error('Failed to load data:', err);
   }
 
   updateDashboard();
-  updateGDriveModal();
 }
 
 // ────────────────────────────
@@ -299,6 +296,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initNavigation();
   initModals();
   initFabUpload();
+  initDriveBrowser();
   initFilters();
   initLightbox();
   initDownloads();
@@ -311,15 +309,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (gdriveParam === 'connected') {
     showToast('Google Drive connected successfully', 'success');
     window.history.replaceState({}, '', '/');
+    // Auto-open Drive browser after connecting
+    setTimeout(() => openDriveBrowser(), 500);
   } else if (gdriveParam === 'error') {
     const reason = urlParams.get('reason') || 'Unknown error';
     showToast('Google Drive connection failed: ' + reason, 'error');
     window.history.replaceState({}, '', '/');
-  }
-
-  // Auto-open GDrive modal after OAuth
-  if (gdriveParam === 'connected' && state.gdriveConnected) {
-    openModal('gdriveModal');
   }
 
   // Sidebar logout
@@ -371,7 +366,7 @@ function switchView(view) {
   $$('.view').forEach((v) => v.classList.remove('active'));
   $(`#view${capitalize(view)}`).classList.add('active');
 
-  if (view === 'media') renderAllMedia();
+  if (view === 'dashboard') renderAllMedia();
   if (view === 'sharing') renderSharingView();
   if (view === 'downloads') renderTransferHistory();
   if (view === 'admin' && state.adminLoggedIn) renderAdminPanel();
@@ -417,15 +412,14 @@ function initSidebarToggle() {
 // MODALS
 // ────────────────────────────
 function initModals() {
+  // Sidebar "Connect Google Drive" button — connect or open browser
   $('#connectGDriveBtn').addEventListener('click', () => {
-    updateGDriveModal();
-    openModal('gdriveModal');
+    if (state.gdriveConnected) {
+      openDriveBrowser();
+    } else {
+      window.location.href = '/api/gdrive/auth';
+    }
   });
-  $('#gdriveModalClose').addEventListener('click', () => closeModal('gdriveModal'));
-  $('#gdriveModal .modal-backdrop').addEventListener('click', () => closeModal('gdriveModal'));
-  $('#googleSignInBtn').addEventListener('click', handleGDriveConnect);
-  $('#gdriveImportBtn').addEventListener('click', startGDriveImport);
-  $('#gdriveDisconnectBtn').addEventListener('click', handleGDriveDisconnect);
 }
 
 function openModal(id) {
@@ -468,17 +462,10 @@ function initFabUpload() {
     fileInput.click();
   });
 
-  // "Google Drive" option
+  // "Google Drive" option — open browser or connect
   $('#fabGDrive').addEventListener('click', () => {
     closeFab();
-    if (!state.gdriveConnected) {
-      // Not connected yet — open the connect modal
-      updateGDriveModal();
-      openModal('gdriveModal');
-    } else {
-      // Already connected — go straight to Picker
-      startGDriveImport();
-    }
+    openDriveBrowser();
   });
 
   fileInput.addEventListener('change', (e) => {
@@ -541,97 +528,147 @@ async function startUpload(accountId, files) {
   if (totalUploaded > 0) {
     showToast(`Uploaded ${totalUploaded} file${totalUploaded > 1 ? 's' : ''}`, 'success');
     $('#onboarding').style.display = 'none';
-    $('#recentSection').style.display = '';
-    renderRecentMedia();
+    $('#dashboardMedia').style.display = '';
+    renderAllMedia();
   }
 }
 
 // ────────────────────────────
-// GOOGLE DRIVE CONNECTION
+// GOOGLE DRIVE BROWSER
 // ────────────────────────────
-async function handleGDriveConnect() {
-  window.location.href = '/api/gdrive/auth';
+let driveNextPageToken = null;
+let driveSelectedFiles = {};   // { fileId: { id, name, mimeType } }
+let driveSearchTimeout = null;
+
+async function openDriveBrowser() {
+  if (!state.gdriveConnected) {
+    window.location.href = '/api/gdrive/auth';
+    return;
+  }
+
+  const browser = $('#driveBrowser');
+  browser.style.display = '';
+  document.body.style.overflow = 'hidden';
+
+  driveSelectedFiles = {};
+  driveNextPageToken = null;
+  $('#driveFileGrid').innerHTML = '';
+  $('#driveSearchInput').value = '';
+  updateDriveSelectionUI();
+
+  await loadDriveFiles();
 }
 
-function updateGDriveModal() {
-  const signIn = $('#gdriveSignIn');
-  const connected = $('#gdriveConnected');
-  if (state.gdriveConnected) {
-    signIn.style.display = 'none';
-    connected.style.display = '';
-    $('#gdriveUserEmail').textContent = state.gdriveEmail || 'Connected';
+function closeDriveBrowser() {
+  $('#driveBrowser').style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+async function loadDriveFiles(append = false) {
+  const loading = $('#driveLoading');
+  const grid = $('#driveFileGrid');
+  const empty = $('#driveEmpty');
+  const loadMore = $('#driveLoadMore');
+
+  if (!append) {
+    loading.style.display = '';
+    grid.innerHTML = '';
+    empty.style.display = 'none';
+    loadMore.style.display = 'none';
   } else {
-    signIn.style.display = '';
-    connected.style.display = 'none';
+    loadMore.textContent = 'Loading...';
+    loadMore.disabled = true;
   }
-}
-
-async function handleGDriveDisconnect() {
-  try {
-    await API.del('/gdrive/disconnect');
-    state.gdriveConnected = false;
-    state.gdriveEmail = '';
-    state.gdriveName = '';
-    updateGDriveModal();
-    showToast('Google Drive disconnected', 'info');
-  } catch (err) {
-    showToast('Failed to disconnect: ' + err.message, 'error');
-  }
-}
-
-async function startGDriveImport() {
-  if (!state.gdriveAccessToken) {
-    showToast('Not authenticated. Please reconnect Google Drive.', 'error');
-    return;
-  }
-
-  closeModal('gdriveModal');
 
   try {
-    await new Promise((resolve, reject) => {
-      if (window.google && window.google.picker) { resolve(); return; }
-      gapi.load('picker', { callback: resolve, onerror: reject });
+    let url = '/api/gdrive/files?';
+    const search = $('#driveSearchInput').value.trim();
+    if (search) url += `q=${encodeURIComponent(search)}&`;
+    if (append && driveNextPageToken) url += `pageToken=${encodeURIComponent(driveNextPageToken)}&`;
+
+    const data = await API.get(url.slice(0, -1));
+    driveNextPageToken = data.nextPageToken;
+
+    loading.style.display = 'none';
+
+    if (data.files.length === 0 && !append) {
+      empty.style.display = '';
+      return;
+    }
+
+    data.files.forEach(file => {
+      const thumb = file.thumbnailLink || '';
+      const isSelected = !!driveSelectedFiles[file.id];
+
+      const item = document.createElement('div');
+      item.className = 'drive-file-item' + (isSelected ? ' selected' : '');
+      item.dataset.fileId = file.id;
+      item.innerHTML = `
+        <div class="drive-file-thumb">
+          ${thumb ? `<img src="${thumb}" alt="" loading="lazy" />` : `<div class="drive-file-placeholder">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="32"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+          </div>`}
+          <div class="drive-file-check">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+          </div>
+        </div>
+        <span class="drive-file-name">${file.name}</span>
+      `;
+
+      item.addEventListener('click', () => {
+        if (driveSelectedFiles[file.id]) {
+          delete driveSelectedFiles[file.id];
+          item.classList.remove('selected');
+        } else {
+          driveSelectedFiles[file.id] = { id: file.id, name: file.name, mimeType: file.mimeType };
+          item.classList.add('selected');
+        }
+        updateDriveSelectionUI();
+      });
+
+      grid.appendChild(item);
     });
-  } catch (err) {
-    showToast('Failed to load Google Picker', 'error');
-    return;
-  }
 
-  try {
-    const builder = new google.picker.PickerBuilder()
-      .setOAuthToken(state.gdriveAccessToken)
-      .setAppId(state.gdriveClientId.split('-')[0])
-      .addView(
-        new google.picker.DocsView(google.picker.ViewId.DOCS)
-          .setMimeTypes('image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif,video/mp4,video/quicktime,video/x-msvideo,video/webm')
-          .setMode(google.picker.DocsViewMode.GRID)
-          .setSelectFolderEnabled(false)
-      )
-      .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
-      .setTitle('Select photos & videos to import')
-      .setCallback(handlePickerResult);
-
-    const picker = builder.build();
-    picker.setVisible(true);
+    loadMore.style.display = driveNextPageToken ? '' : 'none';
+    loadMore.textContent = 'Load More';
+    loadMore.disabled = false;
   } catch (err) {
-    showToast('Failed to open file picker: ' + (err.message || 'Unknown error'), 'error');
+    loading.style.display = 'none';
+    showToast('Failed to load Drive files: ' + err.message, 'error');
   }
 }
 
-async function handlePickerResult(data) {
-  if (data.action === google.picker.Action.CANCEL) return;
-  if (data.action === google.picker.Action.ERROR || data.action === 'error') {
-    showToast('Google Picker error. Check API settings.', 'error');
-    return;
-  }
-  if (data.action !== google.picker.Action.PICKED) return;
+function updateDriveSelectionUI() {
+  const count = Object.keys(driveSelectedFiles).length;
+  const footer = $('#driveBrowserFooter');
+  footer.style.display = count > 0 ? '' : 'none';
+  $('#driveSelectionCount').textContent = `${count} selected`;
+}
 
-  const selectedFiles = data.docs.map(doc => ({
-    id: doc.id,
-    name: doc.name,
-    mimeType: doc.mimeType,
-  }));
+function initDriveBrowser() {
+  $('#driveBrowserClose').addEventListener('click', closeDriveBrowser);
 
+  $('#driveLoadMore').addEventListener('click', () => loadDriveFiles(true));
+
+  // Search with debounce
+  $('#driveSearchInput').addEventListener('input', () => {
+    clearTimeout(driveSearchTimeout);
+    driveSearchTimeout = setTimeout(() => {
+      driveNextPageToken = null;
+      loadDriveFiles();
+    }, 400);
+  });
+
+  // Import button
+  $('#driveImportBtn').addEventListener('click', () => {
+    const files = Object.values(driveSelectedFiles);
+    if (files.length === 0) return;
+    closeDriveBrowser();
+    importDriveFiles(files);
+  });
+}
+
+async function importDriveFiles(selectedFiles) {
   if (selectedFiles.length === 0) return;
 
   openModal('transferModal');
@@ -687,10 +724,9 @@ async function handlePickerResult(data) {
                   updateDashboard();
                   if (getVisibleMedia().length > 0) {
                     $('#onboarding').style.display = 'none';
-                    $('#recentSection').style.display = '';
-                    renderRecentMedia();
+                    $('#dashboardMedia').style.display = '';
+                    renderAllMedia();
                   }
-                  if (state.currentView === 'media') renderAllMedia();
                 }
               }, 1200);
             } else if (eventType === 'error') {
@@ -704,6 +740,20 @@ async function handlePickerResult(data) {
   } catch (err) {
     closeModal('transferModal');
     showToast('Import connection lost. Please try again.', 'error');
+  }
+}
+
+async function handleGDriveDisconnect() {
+  try {
+    await API.del('/gdrive/disconnect');
+    state.gdriveConnected = false;
+    state.gdriveEmail = '';
+    state.gdriveName = '';
+    // Update sidebar button text
+    $('#connectGDriveBtn span').textContent = 'Connect Google Drive';
+    showToast('Google Drive disconnected', 'info');
+  } catch (err) {
+    showToast('Failed to disconnect: ' + err.message, 'error');
   }
 }
 
@@ -723,16 +773,6 @@ async function updateDashboard() {
   const pct = Math.min((parseFloat(totalGB) / 50) * 100, 100);
   $('#storageFill').style.width = pct + '%';
   $('#storageText').textContent = `${totalGB} GB / 50 GB`;
-}
-
-function renderRecentMedia() {
-  const recent = [...getVisibleMedia()]
-    .sort((a, b) => b.timestamp - a.timestamp)
-    .slice(0, 12);
-
-  const grid = $('#recentGrid');
-  grid.innerHTML = recent.map((item) => createMediaCard(item)).join('');
-  attachMediaCardEvents(grid);
 }
 
 // ────────────────────────────
@@ -774,9 +814,6 @@ function attachMediaCardEvents(container) {
   });
 }
 
-// ────────────────────────────
-// SELECTION
-// ────────────────────────────
 function toggleSelect(id, card) {
   if (state.selectedMedia.has(id)) {
     state.selectedMedia.delete(id);
@@ -785,39 +822,14 @@ function toggleSelect(id, card) {
     state.selectedMedia.add(id);
     card.classList.add('selected');
   }
-  updateSelectionInfo();
-}
-
-function updateSelectionInfo() {
-  const info = $('#selectionInfo');
-  const count = state.selectedMedia.size;
-  if (count > 0) {
-    info.style.display = '';
-    $('#selectedCount').textContent = `${count} selected`;
-  } else {
-    info.style.display = 'none';
-  }
 }
 
 // ────────────────────────────
-// ALL MEDIA VIEW
+// MEDIA FILTERS
 // ────────────────────────────
 function initFilters() {
   ['filterType', 'filterDate', 'filterSort'].forEach((id) => {
     $(`#${id}`).addEventListener('change', renderAllMedia);
-  });
-  $('#selectAllBtn').addEventListener('click', () => {
-    const grid = $('#allMediaGrid');
-    grid.querySelectorAll('.media-card').forEach((card) => {
-      state.selectedMedia.add(card.dataset.id);
-      card.classList.add('selected');
-    });
-    updateSelectionInfo();
-  });
-  $('#clearSelectionBtn').addEventListener('click', () => {
-    state.selectedMedia.clear();
-    $$('.media-card.selected').forEach((c) => c.classList.remove('selected'));
-    updateSelectionInfo();
   });
 }
 
@@ -847,22 +859,12 @@ function getFilteredMedia() {
 function renderAllMedia() {
   const grid = $('#allMediaGrid');
   if (getVisibleMedia().length === 0) {
-    grid.innerHTML = `
-      <div class="empty-view-state">
-        <svg viewBox="0 0 64 64" fill="none" width="64" height="64">
-          <rect x="8" y="12" width="48" height="36" rx="4" stroke="currentColor" stroke-width="2" fill="none" opacity="0.3"/>
-          <path d="M8 40l12-12 8 8 12-12 16 16" stroke="currentColor" stroke-width="2" fill="none" opacity="0.3"/>
-        </svg>
-        <h3>No media yet</h3>
-        <p>Tap the + button to upload your first photos & videos.</p>
-      </div>
-    `;
+    grid.innerHTML = '';
     return;
   }
   const items = getFilteredMedia();
-  grid.innerHTML = items.map((item) => createMediaCard(item, true)).join('');
+  grid.innerHTML = items.map((item) => createMediaCard(item)).join('');
   attachMediaCardEvents(grid);
-  updateSelectionInfo();
 }
 
 // ────────────────────────────
@@ -1236,7 +1238,7 @@ function initSearch() {
     debounceTimer = setTimeout(() => {
       const query = e.target.value.toLowerCase().trim();
       if (!query) {
-        if (state.currentView === 'media') renderAllMedia();
+        renderAllMedia();
         return;
       }
       const results = getVisibleMedia().filter(
@@ -1244,9 +1246,9 @@ function initSearch() {
           (m.location && m.location.toLowerCase().includes(query)) ||
           (m.category && m.category.toLowerCase().includes(query))
       );
-      switchView('media');
+      switchView('dashboard');
       const grid = $('#allMediaGrid');
-      grid.innerHTML = results.map((item) => createMediaCard(item, true)).join('');
+      grid.innerHTML = results.map((item) => createMediaCard(item)).join('');
       attachMediaCardEvents(grid);
     }, 300);
   });
@@ -1324,7 +1326,6 @@ async function downloadAll() {
 function transferAllToDrive() {
   if (!state.gdriveConnected) {
     showToast('Connect Google Drive first', 'error');
-    openModal('gdriveModal');
     return;
   }
   const visible = getVisibleMedia();
@@ -1567,7 +1568,7 @@ async function clearAllMedia() {
     state.selectedMedia.clear();
     updateDashboard();
     renderAdminPanel();
-    $('#recentSection').style.display = 'none';
+    $('#dashboardMedia').style.display = 'none';
     $('#onboarding').style.display = '';
     showToast('All media cleared', 'success');
   } catch (err) {

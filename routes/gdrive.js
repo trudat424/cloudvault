@@ -5,14 +5,14 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { queryOne, queryAll, run } = require('../db/database');
-const { DATA_DIR, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, GOOGLE_API_KEY } = require('../config');
+const { DATA_DIR, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI } = require('../config');
 const { generateThumbnail } = require('../services/thumbnail');
 const { extractMetadata } = require('../services/metadata');
 
-// Only drive.file scope — non-sensitive, no "unverified app" warning
-// Google Picker grants per-file access under this scope
+// drive.readonly scope — allows listing + downloading all user files
+// Used for the custom in-app Drive browser (no Google Picker needed)
 const SCOPES = [
-  'https://www.googleapis.com/auth/drive.file',
+  'https://www.googleapis.com/auth/drive.readonly',
 ];
 
 function getOAuth2Client() {
@@ -122,10 +122,7 @@ router.get('/status', async (req, res) => {
       connected: true,
       email: about.data.user.emailAddress,
       name: about.data.user.displayName,
-      // Picker config — frontend needs these to open Google Picker
       accessToken: creds.access_token,
-      apiKey: GOOGLE_API_KEY,
-      clientId: GOOGLE_CLIENT_ID,
     });
   } catch (err) {
     console.error('GDrive status check failed:', err.message);
@@ -135,6 +132,54 @@ router.get('/status', async (req, res) => {
     deleteSetting('gdrive_token_expiry');
     deleteSetting('gdrive_connected');
     res.json({ connected: false });
+  }
+});
+
+// GET /api/gdrive/files — list photos & videos from user's Drive
+router.get('/files', async (req, res) => {
+  const client = getAuthedClient();
+  if (!client) {
+    return res.status(401).json({ error: 'Google Drive not connected' });
+  }
+
+  try {
+    // Refresh token if needed
+    const tokenInfo = client.credentials;
+    if (tokenInfo.expiry_date && tokenInfo.expiry_date < Date.now()) {
+      const { credentials } = await client.refreshAccessToken();
+      saveSetting('gdrive_access_token', credentials.access_token);
+      saveSetting('gdrive_token_expiry', String(credentials.expiry_date || 0));
+    }
+
+    const drive = google.drive({ version: 'v3', auth: client });
+
+    // Build query — photos and videos only
+    let q = "(mimeType contains 'image/' or mimeType contains 'video/') and trashed = false";
+    const searchQuery = req.query.q;
+    if (searchQuery) {
+      q += ` and name contains '${searchQuery.replace(/'/g, "\\'")}'`;
+    }
+
+    const params = {
+      q,
+      fields: 'files(id, name, mimeType, thumbnailLink, modifiedTime, size), nextPageToken',
+      pageSize: 50,
+      orderBy: 'modifiedTime desc',
+    };
+
+    if (req.query.pageToken) {
+      params.pageToken = req.query.pageToken;
+    }
+
+    const result = await drive.files.list(params);
+
+    res.json({
+      files: result.data.files || [],
+      nextPageToken: result.data.nextPageToken || null,
+    });
+  } catch (err) {
+    console.error('Drive files list error:', err.message);
+    res.status(500).json({ error: 'Failed to list Drive files: ' + err.message });
   }
 });
 

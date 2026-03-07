@@ -97,10 +97,6 @@
         <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/></svg>
         <span>Dashboard</span>
       </a>
-      <a href="#" class="nav-item" data-view="media">
-        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"/></svg>
-        <span>All Media</span>
-      </a>
       <a href="#" class="nav-item" data-view="sharing">
         <svg viewBox="0 0 20 20" fill="currentColor"><path d="M15 8a3 3 0 10-2.977-2.63l-4.94 2.47a3 3 0 100 4.319l4.94 2.47a3 3 0 10.895-1.789l-4.94-2.47a3.027 3.027 0 000-.74l4.94-2.47C13.456 7.68 14.19 8 15 8z"/></svg>
         <span>Sharing</span>
@@ -218,57 +214,41 @@
         </div>
       </div>
 
-      <!-- RECENT ACTIVITY -->
-      <div class="recent-section" id="recentSection" style="display:none;">
-        <h2 class="section-title">Recent Uploads</h2>
-        <div class="media-grid" id="recentGrid"></div>
-      </div>
-    </section>
+      <!-- MEDIA FILTERS + GRID (shown when media exists) -->
+      <div class="dashboard-media" id="dashboardMedia" style="display:none;">
+        <div class="filter-bar" id="filterBar">
+          <div class="filter-group">
+            <label>Type</label>
+            <select id="filterType">
+              <option value="all">All Types</option>
+              <option value="photo">Photos</option>
+              <option value="video">Videos</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Date</label>
+            <select id="filterDate">
+              <option value="all">All Time</option>
+              <option value="today">Today</option>
+              <option value="week">This Week</option>
+              <option value="month">This Month</option>
+              <option value="year">This Year</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Sort</label>
+            <select id="filterSort">
+              <option value="newest">Newest First</option>
+              <option value="oldest">Oldest First</option>
+              <option value="largest">Largest First</option>
+              <option value="smallest">Smallest First</option>
+              <option value="name">By Name</option>
+            </select>
+          </div>
+        </div>
 
-    <!-- ═══ VIEW: ALL MEDIA ═══ -->
-    <section class="view" id="viewMedia">
-      <div class="view-header">
-        <h1 class="view-title">All Media</h1>
-        <p class="view-subtitle">Browse and filter your content</p>
+        <div class="media-grid" id="allMediaGrid"></div>
       </div>
-
-      <div class="filter-bar" id="filterBar">
-        <div class="filter-group">
-          <label>Type</label>
-          <select id="filterType">
-            <option value="all">All Types</option>
-            <option value="photo">Photos</option>
-            <option value="video">Videos</option>
-          </select>
-        </div>
-        <div class="filter-group">
-          <label>Date</label>
-          <select id="filterDate">
-            <option value="all">All Time</option>
-            <option value="today">Today</option>
-            <option value="week">This Week</option>
-            <option value="month">This Month</option>
-            <option value="year">This Year</option>
-          </select>
-        </div>
-        <div class="filter-group">
-          <label>Sort</label>
-          <select id="filterSort">
-            <option value="newest">Newest First</option>
-            <option value="oldest">Oldest First</option>
-            <option value="largest">Largest First</option>
-            <option value="smallest">Smallest First</option>
-            <option value="name">By Name</option>
-          </select>
-        </div>
-        <div class="filter-group selection-info" id="selectionInfo" style="display:none;">
-          <span id="selectedCount">0 selected</span>
-          <button class="small-btn" id="selectAllBtn">Select All</button>
-          <button class="small-btn" id="clearSelectionBtn">Clear</button>
-        </div>
-      </div>
-
-      <div class="media-grid selectable" id="allMediaGrid"></div>
     </section>
 
     <!-- ═══ VIEW: SHARING ═══ -->
@@ -460,52 +440,40 @@
     </div>
   </div>
 
-  <!-- ════════ GOOGLE DRIVE CONNECT MODAL ════════ -->
-  <div class="modal" id="gdriveModal">
-    <div class="modal-backdrop"></div>
-    <div class="modal-card gdrive-modal-card">
-      <button class="modal-close" id="gdriveModalClose">
+  <!-- ════════ GOOGLE DRIVE BROWSER ════════ -->
+  <div class="drive-browser" id="driveBrowser" style="display:none;">
+    <div class="drive-browser-header">
+      <button class="drive-browser-close" id="driveBrowserClose">
         <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
       </button>
-
-      <div class="gdrive-sign-in" id="gdriveSignIn">
-        <div class="gdrive-logo">
-          <svg viewBox="0 0 48 48" fill="none" width="56">
-            <path d="M16.43 7L3 30l6.86 11.94L23.29 18.94 16.43 7z" fill="#0066DA"/>
-            <path d="M17.57 7l13.72 23.94H45L31.29 7H17.57z" fill="#00AC47"/>
-            <path d="M30.57 33H3.14L10 44.94h27.43L30.57 33z" fill="#EA4335"/>
-          </svg>
-        </div>
-        <h2>Connect Google Drive</h2>
-        <p>Link your Google Drive to import and transfer media</p>
-        <button class="google-sign-in-btn" id="googleSignInBtn">
-          <svg viewBox="0 0 24 24" width="18"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-          Sign in with Google
-        </button>
+      <div class="drive-browser-title">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="20"><path d="M7.71 3.5L1.15 15l3.43 5.97L11.14 9.47 7.71 3.5zm1.14 0l6.86 11.94H22.85L16 3.5H8.85zM15.29 16.5H1.71L5.14 22.47h13.72l-3.57-5.97z"/></svg>
+        <span>Google Drive</span>
       </div>
-
-      <div class="gdrive-connected" id="gdriveConnected" style="display:none;">
-        <div class="gdrive-logo">
-          <svg viewBox="0 0 48 48" fill="none" width="56">
-            <path d="M16.43 7L3 30l6.86 11.94L23.29 18.94 16.43 7z" fill="#0066DA"/>
-            <path d="M17.57 7l13.72 23.94H45L31.29 7H17.57z" fill="#00AC47"/>
-            <path d="M30.57 33H3.14L10 44.94h27.43L30.57 33z" fill="#EA4335"/>
-          </svg>
-        </div>
-        <div class="gdrive-user-info">
-          <svg viewBox="0 0 24 24" fill="none" width="20" height="20"><circle cx="12" cy="12" r="10" stroke="var(--green)" stroke-width="2"/><path d="M8 12l3 3 5-5" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          <span id="gdriveUserEmail" style="color: var(--text-secondary); font-size: 0.9rem;">Connected</span>
-        </div>
-        <h2>Google Drive Connected</h2>
-        <p>Import photos and videos from Google Drive</p>
-        <button class="google-sign-in-btn" id="gdriveImportBtn" style="background: #34A853;">
-          <svg viewBox="0 0 20 20" fill="currentColor" width="18"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
-          Import from Google Drive
-        </button>
-        <button class="gdrive-disconnect-btn" id="gdriveDisconnectBtn" style="margin-top: 12px; background: none; border: 1px solid var(--border); color: var(--text-muted); padding: 8px 20px; border-radius: 8px; cursor: pointer; font-size: 0.85rem;">
-          Disconnect
-        </button>
+      <div class="drive-browser-search">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+        <input type="text" id="driveSearchInput" placeholder="Search files..." />
       </div>
+    </div>
+
+    <div class="drive-browser-body" id="driveBrowserBody">
+      <div class="drive-browser-loading" id="driveLoading">
+        <div class="transfer-spinner"></div>
+        <p>Loading your files...</p>
+      </div>
+      <div class="drive-file-grid" id="driveFileGrid"></div>
+      <button class="drive-load-more" id="driveLoadMore" style="display:none;">Load More</button>
+      <div class="drive-empty" id="driveEmpty" style="display:none;">
+        <p>No photos or videos found in your Google Drive.</p>
+      </div>
+    </div>
+
+    <div class="drive-browser-footer" id="driveBrowserFooter" style="display:none;">
+      <span class="drive-selection-count" id="driveSelectionCount">0 selected</span>
+      <button class="drive-import-btn" id="driveImportBtn">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="16"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        Import Selected
+      </button>
     </div>
   </div>
 
@@ -529,10 +497,6 @@
       <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/></svg>
       <span>Home</span>
     </a>
-    <a href="#" class="mobile-nav-item" data-view="media">
-      <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"/></svg>
-      <span>Media</span>
-    </a>
     <a href="#" class="mobile-nav-item" data-view="sharing">
       <svg viewBox="0 0 20 20" fill="currentColor"><path d="M15 8a3 3 0 10-2.977-2.63l-4.94 2.47a3 3 0 100 4.319l4.94 2.47a3 3 0 10.895-1.789l-4.94-2.47a3.027 3.027 0 000-.74l4.94-2.47C13.456 7.68 14.19 8 15 8z"/></svg>
       <span>Share</span>
@@ -553,7 +517,6 @@
   <!-- ════════ TOAST NOTIFICATIONS ════════ -->
   <div class="toast-container" id="toastContainer"></div>
 
-  <script src="https://apis.google.com/js/api.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
