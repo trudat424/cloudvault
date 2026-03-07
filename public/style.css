@@ -3201,10 +3201,6 @@ img { display: block; max-width: 100%; }
   bottom: 90px;
   right: 24px;
   z-index: 200;
-  display: flex;
-  flex-direction: column-reverse;
-  align-items: center;
-  gap: 0;
 }
 
 .fab-upload {
@@ -3257,13 +3253,15 @@ img { display: block; max-width: 100%; }
   display: block;
 }
 
-/* Options */
+/* Options — positioned above the FAB button */
 .fab-options {
+  position: absolute;
+  bottom: calc(100% + 16px);
+  right: 0;
   display: flex;
-  flex-direction: column-reverse;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-end;
   gap: 12px;
-  margin-bottom: 16px;
   pointer-events: none;
   opacity: 0;
   transform: translateY(20px) scale(0.8);
