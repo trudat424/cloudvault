@@ -489,6 +489,15 @@ function initFabUpload() {
     openDriveBrowser();
   });
 
+  // "Import URL" option
+  const fabUrl = $('#fabUrlImport');
+  if (fabUrl) {
+    fabUrl.addEventListener('click', () => {
+      closeFab();
+      openUrlImportModal();
+    });
+  }
+
   fileInput.addEventListener('change', (e) => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
@@ -1490,6 +1499,7 @@ function renderAdminPanel() {
   renderAdminStats();
   renderAdminMedia();
   initAdminMediaFilters();
+  renderAdminScraperSettings();
 }
 
 function initAdminMediaFilters() {
@@ -2256,6 +2266,25 @@ async function renderConnectionsView() {
 
       const statusClass = p.connected ? 'connected' : '';
 
+      // Build action buttons
+      let actions = '';
+      if (p.connected) {
+        actions += `<button class="conn-btn conn-browse" data-platform="${p.id}">Browse</button>`;
+        actions += `<button class="conn-btn conn-url-import" data-platform="${p.id}">Import URL</button>`;
+        actions += `<button class="conn-btn conn-disconnect" data-platform="${p.id}">Disconnect</button>`;
+      } else {
+        // Always show Import URL (no API keys needed)
+        actions += `<button class="conn-btn conn-url-import" data-platform="${p.id}">Import URL</button>`;
+        // Show scrape browse for YouTube
+        if (p.scrapeBrowseAvailable) {
+          actions += `<button class="conn-btn conn-scrape-browse" data-platform="${p.id}">Search</button>`;
+        }
+        // Show connect if API keys are available
+        if (p.available) {
+          actions += `<button class="conn-btn conn-connect" data-platform="${p.id}" data-available="${p.available}">Connect API</button>`;
+        }
+      }
+
       html += `
         <div class="connection-card ${statusClass}" data-platform="${p.id}">
           <div class="connection-icon">${iconMap[p.id] || ''}</div>
@@ -2265,11 +2294,7 @@ async function renderConnectionsView() {
             ${p.connected ? `<span class="connection-categories">${p.categories.join(', ')}</span>` : ''}
           </div>
           <div class="connection-actions">
-            ${p.connected
-              ? `<button class="conn-btn conn-browse" data-platform="${p.id}">Browse</button>
-                 <button class="conn-btn conn-disconnect" data-platform="${p.id}">Disconnect</button>`
-              : `<button class="conn-btn conn-connect" data-platform="${p.id}" data-available="${p.available}">Connect</button>`
-            }
+            ${actions}
           </div>
         </div>
       `;
@@ -2322,6 +2347,20 @@ async function renderConnectionsView() {
         } else {
           openSocialBrowser(platform);
         }
+      });
+    });
+
+    // URL import buttons
+    grid.querySelectorAll('.conn-url-import').forEach(btn => {
+      btn.addEventListener('click', () => {
+        openUrlImportModal(btn.dataset.platform);
+      });
+    });
+
+    // Scrape browse buttons (YouTube search)
+    grid.querySelectorAll('.conn-scrape-browse').forEach(btn => {
+      btn.addEventListener('click', () => {
+        openScrapeBrowser(btn.dataset.platform);
       });
     });
 
@@ -2506,4 +2545,500 @@ async function importSocialContent(platform, items) {
     closeModal('transferModal');
     showToast('Import connection lost. Please try again.', 'error');
   }
+}
+
+// ────────────────────────────
+// URL IMPORT MODAL
+// ────────────────────────────
+function openUrlImportModal(platform) {
+  const modal = $('#urlImportModal');
+  if (!modal) return;
+  modal.style.display = '';
+  document.body.style.overflow = 'hidden';
+
+  const input = $('#urlImportInput');
+  const error = $('#urlImportError');
+  const preview = $('#urlImportPreview');
+  const actions = $('#urlImportActions');
+
+  input.value = '';
+  error.style.display = 'none';
+  preview.style.display = 'none';
+  preview.innerHTML = '';
+  actions.style.display = 'none';
+
+  if (platform) {
+    const names = { youtube: 'YouTube', instagram: 'Instagram', tiktok: 'TikTok', twitter: 'Twitter/X' };
+    input.placeholder = `Paste a ${names[platform] || platform} URL...`;
+  } else {
+    input.placeholder = 'https://...';
+  }
+
+  setTimeout(() => input.focus(), 100);
+
+  $('#urlImportClose').onclick = () => closeUrlImportModal();
+  $('#urlImportBackdrop').onclick = () => closeUrlImportModal();
+  $('#urlImportFetchBtn').onclick = () => fetchUrlPreview();
+
+  input.onpaste = () => setTimeout(() => fetchUrlPreview(), 150);
+  input.onkeydown = (e) => { if (e.key === 'Enter') fetchUrlPreview(); };
+}
+
+function closeUrlImportModal() {
+  const modal = $('#urlImportModal');
+  if (modal) modal.style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+async function fetchUrlPreview() {
+  const input = $('#urlImportInput');
+  const error = $('#urlImportError');
+  const preview = $('#urlImportPreview');
+  const actions = $('#urlImportActions');
+  const fetchBtn = $('#urlImportFetchBtn');
+
+  const url = input.value.trim();
+  if (!url) {
+    error.textContent = 'Please paste a URL';
+    error.style.display = '';
+    return;
+  }
+
+  error.style.display = 'none';
+  preview.style.display = 'none';
+  actions.style.display = 'none';
+  fetchBtn.textContent = 'Fetching...';
+  fetchBtn.disabled = true;
+
+  try {
+    const res = await fetch('/api/social/import-url', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Account-Id': state.currentUser?.id || '',
+      },
+      body: JSON.stringify({ url, action: 'preview' }),
+    });
+
+    const data = await res.json();
+    fetchBtn.textContent = 'Fetch';
+    fetchBtn.disabled = false;
+
+    if (!res.ok) {
+      error.textContent = data.error || 'Failed to fetch URL';
+      error.style.display = '';
+      return;
+    }
+
+    const item = data.item;
+    if (!item) {
+      error.textContent = 'Could not extract content from this URL';
+      error.style.display = '';
+      return;
+    }
+
+    const platformIcons = { youtube: '▶️', instagram: '📷', tiktok: '🎵', twitter: '🐦' };
+    const platformNames = { youtube: 'YouTube', instagram: 'Instagram', tiktok: 'TikTok', twitter: 'Twitter/X' };
+
+    preview.innerHTML = `
+      <div class="url-preview-card">
+        ${item.thumbnail ? `<img class="url-preview-thumb" src="${item.thumbnail}" alt="" />` : '<div class="url-preview-thumb-placeholder">No preview</div>'}
+        <div class="url-preview-info">
+          <span class="url-preview-platform">${platformIcons[item.platform] || '🔗'} ${platformNames[item.platform] || item.platform}</span>
+          <h4 class="url-preview-title">${item.title || 'Untitled'}</h4>
+          ${item.author ? `<span class="url-preview-author">by ${item.author}</span>` : ''}
+          ${item.category ? `<span class="url-preview-category">${item.category}</span>` : ''}
+        </div>
+      </div>
+    `;
+    preview.style.display = '';
+    actions.style.display = '';
+
+    state._urlImportItem = item;
+    state._urlImportUrl = url;
+
+    $('#urlImportConfirmBtn').onclick = () => confirmUrlImport();
+
+  } catch (err) {
+    fetchBtn.textContent = 'Fetch';
+    fetchBtn.disabled = false;
+    error.textContent = 'Network error. Please try again.';
+    error.style.display = '';
+  }
+}
+
+async function confirmUrlImport() {
+  if (!state.currentUser) {
+    showToast('Please log in first', 'error');
+    return;
+  }
+
+  const url = state._urlImportUrl;
+  if (!url) return;
+
+  closeUrlImportModal();
+
+  openModal('transferModal');
+  const fill = $('#transferProgressFill');
+  const countEl = $('#transferCount');
+  const statusEl = $('#transferStatus');
+  const titleEl = $('#transferTitle');
+
+  const platformNames = { instagram: 'Instagram', tiktok: 'TikTok', twitter: 'Twitter/X', youtube: 'YouTube' };
+  const item = state._urlImportItem;
+  titleEl.textContent = `Importing from ${platformNames[item?.platform] || 'URL'}...`;
+  fill.style.width = '0%';
+  countEl.textContent = '';
+  statusEl.textContent = 'Starting import...';
+
+  try {
+    const response = await fetch('/api/social/import-url', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Account-Id': state.currentUser.id,
+      },
+      body: JSON.stringify({ url, action: 'import' }),
+    });
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let sseBuffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      sseBuffer += decoder.decode(value, { stream: true });
+      const lines = sseBuffer.split('\n');
+      sseBuffer = lines.pop();
+
+      let eventType = '';
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          eventType = line.slice(7).trim();
+        } else if (line.startsWith('data: ')) {
+          try {
+            const eventData = JSON.parse(line.slice(6));
+            if (eventType === 'progress') {
+              statusEl.textContent = eventData.status === 'downloading' ? 'Downloading...' : 'Uploading to vault...';
+              fill.style.width = eventData.status === 'uploading' ? '60%' : '20%';
+            } else if (eventType === 'done') {
+              fill.style.width = '100%';
+              statusEl.textContent = 'Complete!';
+              countEl.textContent = `${eventData.imported} imported`;
+              setTimeout(async () => {
+                closeModal('transferModal');
+                showToast(`Imported "${eventData.title || 'content'}" from ${platformNames[eventData.platform] || 'URL'}`, 'success');
+                await refreshMedia();
+                updateDashboard();
+                if (getVisibleMedia().length > 0) {
+                  $('#onboarding').style.display = 'none';
+                  $('#dashboardMedia').style.display = '';
+                  navigateToFolder(state.currentFolderId);
+                }
+              }, 1200);
+            } else if (eventType === 'error') {
+              closeModal('transferModal');
+              showToast(eventData.error || 'Import failed', 'error');
+            }
+          } catch (_) {}
+        }
+      }
+    }
+  } catch (err) {
+    closeModal('transferModal');
+    showToast('Import failed. Please try again.', 'error');
+  }
+}
+
+// ────────────────────────────
+// SCRAPE BROWSER (YouTube Search)
+// ────────────────────────────
+let socialSelectedItems = {};
+
+async function openScrapeBrowser(platform) {
+  const browser = $('#socialBrowser');
+  if (!browser) return;
+  browser.style.display = '';
+  document.body.style.overflow = 'hidden';
+
+  socialSelectedItems = {};
+  const grid = $('#socialFileGrid');
+  grid.innerHTML = '';
+  $('#socialSearchInput').value = '';
+  $('#socialEmpty').style.display = '';
+  $('#socialLoading').style.display = 'none';
+  $('#socialBrowserFooter').style.display = 'none';
+
+  const platformNames = { youtube: 'YouTube', instagram: 'Instagram', tiktok: 'TikTok', twitter: 'Twitter/X' };
+  $('#socialBrowserTitle').textContent = `${platformNames[platform] || platform} Search`;
+
+  $('#socialBrowserClose').onclick = () => closeScrapeBrowser();
+
+  let searchTimeout;
+  const searchInput = $('#socialSearchInput');
+  searchInput.onkeyup = () => {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+      const q = searchInput.value.trim();
+      if (q.length >= 2) performScrapeSearch(platform, q);
+    }, 400);
+  };
+  searchInput.onkeydown = (e) => {
+    if (e.key === 'Enter') {
+      clearTimeout(searchTimeout);
+      const q = searchInput.value.trim();
+      if (q) performScrapeSearch(platform, q);
+    }
+  };
+
+  $('#socialImportBtn').onclick = () => {
+    const items = Object.values(socialSelectedItems);
+    if (items.length === 0) return;
+    closeScrapeBrowser();
+    importUrlItems(items);
+  };
+
+  setTimeout(() => searchInput.focus(), 100);
+}
+
+function closeScrapeBrowser() {
+  const browser = $('#socialBrowser');
+  if (browser) browser.style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+async function performScrapeSearch(platform, query) {
+  const grid = $('#socialFileGrid');
+  const loading = $('#socialLoading');
+  const empty = $('#socialEmpty');
+
+  grid.innerHTML = '';
+  loading.style.display = '';
+  empty.style.display = 'none';
+
+  try {
+    const data = await API.get(`/social/${platform}/scrape?q=${encodeURIComponent(query)}`);
+    loading.style.display = 'none';
+
+    if (!data.items || data.items.length === 0) {
+      empty.style.display = '';
+      empty.querySelector('p').textContent = 'No results found.';
+      return;
+    }
+
+    data.items.forEach(item => {
+      const el = document.createElement('div');
+      el.className = 'drive-file-item';
+      el.dataset.fileId = item.id;
+      el.innerHTML = `
+        <div class="drive-file-thumb">
+          ${item.thumbnail ? `<img src="${item.thumbnail}" alt="" loading="lazy" />` : `<div class="drive-file-placeholder">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="32"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+          </div>`}
+          <div class="drive-file-check">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+          </div>
+          ${item.category ? `<span class="social-category-badge">${item.category}</span>` : ''}
+          ${item.duration ? `<span class="social-duration-badge">${formatDuration(item.duration)}</span>` : ''}
+        </div>
+        <span class="drive-file-name">${item.title || item.id}</span>
+        ${item.author ? `<span class="drive-file-meta">${item.author}</span>` : ''}
+      `;
+
+      el.addEventListener('click', () => {
+        if (socialSelectedItems[item.id]) {
+          delete socialSelectedItems[item.id];
+          el.classList.remove('selected');
+        } else {
+          socialSelectedItems[item.id] = item;
+          el.classList.add('selected');
+        }
+        updateSocialSelectionUI();
+      });
+
+      grid.appendChild(el);
+    });
+
+  } catch (err) {
+    loading.style.display = 'none';
+    showToast('Search failed', 'error');
+  }
+}
+
+function updateSocialSelectionUI() {
+  const count = Object.keys(socialSelectedItems).length;
+  const footer = $('#socialBrowserFooter');
+  if (footer) footer.style.display = count > 0 ? '' : 'none';
+  const countEl = $('#socialSelectionCount');
+  if (countEl) countEl.textContent = `${count} selected`;
+}
+
+function formatDuration(seconds) {
+  if (!seconds) return '';
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+async function importUrlItems(items) {
+  openModal('transferModal');
+  const fill = $('#transferProgressFill');
+  const countEl = $('#transferCount');
+  const statusEl = $('#transferStatus');
+  const titleEl = $('#transferTitle');
+
+  titleEl.textContent = 'Importing from URL...';
+  fill.style.width = '0%';
+  countEl.textContent = `0 / ${items.length} files`;
+  statusEl.textContent = 'Starting import...';
+
+  let imported = 0;
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const pct = Math.round(((i) / items.length) * 100);
+    fill.style.width = pct + '%';
+    countEl.textContent = `${i} / ${items.length} files`;
+    statusEl.textContent = `Importing: ${item.title || item.id}`;
+
+    try {
+      const response = await fetch('/api/social/import-url', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Account-Id': state.currentUser.id,
+        },
+        body: JSON.stringify({ url: item.sourceUrl || item.url, action: 'import' }),
+      });
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        if (buf.includes('event: done')) { imported++; break; }
+        if (buf.includes('event: error')) break;
+      }
+    } catch (_) {}
+  }
+
+  fill.style.width = '100%';
+  statusEl.textContent = 'Complete!';
+  countEl.textContent = `${imported} / ${items.length} imported`;
+
+  setTimeout(async () => {
+    closeModal('transferModal');
+    if (imported > 0) {
+      showToast(`Imported ${imported} files`, 'success');
+      await refreshMedia();
+      updateDashboard();
+      if (getVisibleMedia().length > 0) {
+        $('#onboarding').style.display = 'none';
+        $('#dashboardMedia').style.display = '';
+        navigateToFolder(state.currentFolderId);
+      }
+    }
+  }, 1200);
+}
+
+// ────────────────────────────
+// ADMIN SCRAPER COOKIE SETTINGS
+// ────────────────────────────
+async function renderAdminScraperSettings() {
+  const container = $('#adminScraperCookies');
+  if (!container) return;
+
+  const platforms = [
+    { id: 'youtube', name: 'YouTube', icon: '▶️' },
+    { id: 'instagram', name: 'Instagram', icon: '📷' },
+    { id: 'tiktok', name: 'TikTok', icon: '🎵' },
+    { id: 'twitter', name: 'Twitter/X', icon: '🐦' },
+  ];
+
+  let status = {};
+  try {
+    status = await API.get('/admin/scraper-cookies');
+  } catch (_) {}
+
+  container.innerHTML = platforms.map(p => `
+    <div class="scraper-cookie-row" data-platform="${p.id}">
+      <div class="scraper-cookie-header">
+        <span class="scraper-cookie-label">${p.icon} ${p.name}</span>
+        <span class="scraper-cookie-status ${status[p.id] ? 'configured' : ''}">${status[p.id] ? '✓ Configured' : '✗ Not set'}</span>
+      </div>
+      <textarea class="scraper-cookie-input" id="scraperCookie_${p.id}" placeholder="Paste cookie header string from browser DevTools..."></textarea>
+      <div class="scraper-cookie-actions">
+        <label class="scraper-cookie-file-label">
+          <input type="file" class="scraper-cookie-file" data-platform="${p.id}" accept=".txt,.cookie,.cookies" style="display:none;" />
+          Upload File
+        </label>
+        <button class="btn btn-primary scraper-cookie-save" data-platform="${p.id}">Save</button>
+        <button class="btn scraper-cookie-clear" data-platform="${p.id}" ${!status[p.id] ? 'disabled' : ''}>Clear</button>
+      </div>
+    </div>
+  `).join('');
+
+  container.querySelectorAll('.scraper-cookie-save').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const platform = btn.dataset.platform;
+      const textarea = $(`#scraperCookie_${platform}`);
+      const cookies = textarea.value.trim();
+      if (!cookies) {
+        showToast('Please paste a cookie string or upload a file', 'error');
+        return;
+      }
+      try {
+        await API.put(`/admin/scraper-cookies/${platform}`, { cookies });
+        showToast(`${platform} cookies saved`, 'success');
+        textarea.value = '';
+        renderAdminScraperSettings();
+      } catch (err) {
+        showToast('Failed to save cookies', 'error');
+      }
+    });
+  });
+
+  container.querySelectorAll('.scraper-cookie-clear').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const platform = btn.dataset.platform;
+      try {
+        await API.del(`/admin/scraper-cookies/${platform}`);
+        showToast(`${platform} cookies cleared`, 'info');
+        renderAdminScraperSettings();
+      } catch (err) {
+        showToast('Failed to clear cookies', 'error');
+      }
+    });
+  });
+
+  container.querySelectorAll('.scraper-cookie-file').forEach(input => {
+    input.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const platform = input.dataset.platform;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const text = reader.result;
+        const parsed = parseNetscapeCookieFile(text);
+        const textarea = $(`#scraperCookie_${platform}`);
+        textarea.value = parsed || text;
+      };
+      reader.readAsText(file);
+      e.target.value = '';
+    });
+  });
+}
+
+function parseNetscapeCookieFile(text) {
+  const lines = text.split('\n').filter(l => l.trim() && !l.startsWith('#'));
+  const cookies = [];
+  for (const line of lines) {
+    const parts = line.split('\t');
+    if (parts.length >= 7) {
+      cookies.push(`${parts[5]}=${parts[6]}`);
+    }
+  }
+  return cookies.length > 0 ? cookies.join('; ') : null;
 }

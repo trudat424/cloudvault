@@ -1,8 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
 const { queryAll, queryOne, run } = require('../db/database');
 const config = require('../config');
+const scraper = require('../services/socialScraper');
+const s3Storage = require('../services/s3Storage');
 
 function getAccountId(req) {
   return req.headers['x-account-id'] || req.query.account_id || null;
@@ -76,6 +81,8 @@ router.get('/platforms', (req, res) => {
       username: conn ? conn.platform_username : null,
       connectedAt: conn ? conn.connected_at : null,
       available: hasCredentials,
+      urlImportAvailable: true,
+      scrapeBrowseAvailable: key === 'youtube',
     };
   });
 
@@ -467,6 +474,185 @@ router.post('/:platform/import', async (req, res) => {
 
   res.write(`event: done\ndata: ${JSON.stringify({ imported, total: items.length })}\n\n`);
   res.end();
+});
+
+// ── URL Import (no API keys needed) ──────────────────
+
+// POST /api/social/import-url — preview or import from a pasted URL
+router.post('/import-url', async (req, res) => {
+  const { url, action } = req.body;
+
+  if (!url) return res.status(400).json({ error: 'URL is required' });
+
+  const detected = scraper.detectPlatform(url);
+  if (!detected) {
+    return res.status(400).json({
+      error: 'Unsupported URL. Paste a link from YouTube, Instagram, TikTok, or Twitter/X.',
+    });
+  }
+
+  try {
+    const item = await scraper.extractFromUrl(url);
+
+    // Preview mode — just return metadata
+    if (action === 'preview') {
+      return res.json({ item });
+    }
+
+    // Import mode — download and save
+    const accountId = getAccountId(req);
+    if (!accountId) return res.status(400).json({ error: 'Not authenticated' });
+
+    const account = queryOne('SELECT * FROM accounts WHERE id = ?', [accountId]);
+    if (!account) return res.status(404).json({ error: 'Account not found' });
+
+    // SSE for progress
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    res.write(`event: progress\ndata: ${JSON.stringify({
+      status: 'downloading',
+      fileName: item.title || item.id,
+    })}\n\n`);
+
+    let buffer;
+    let ext = '.jpg';
+    let mimeType = 'image/jpeg';
+    let tmpPath;
+
+    try {
+      if (item.platform === 'youtube' && item.hasVideo) {
+        // YouTube: use ytdl stream for actual video download
+        const stream = scraper.downloadYouTubeStream(item.url || item.sourceUrl);
+        const chunks = [];
+        for await (const chunk of stream) {
+          chunks.push(chunk);
+        }
+        buffer = Buffer.concat(chunks);
+        ext = '.mp4';
+        mimeType = 'video/mp4';
+      } else if (item.url) {
+        // Other platforms: fetch the media URL
+        const headers = {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        };
+        const cookies = scraper.getCookies(item.platform);
+        if (cookies) headers['Cookie'] = cookies;
+
+        const dlRes = await fetch(item.url, { headers, redirect: 'follow' });
+        if (!dlRes.ok) throw new Error(`Download failed: ${dlRes.status}`);
+
+        buffer = Buffer.from(await dlRes.arrayBuffer());
+
+        // Detect type from content-type header or URL
+        const ct = dlRes.headers.get('content-type') || '';
+        if (ct.includes('video/') || item.url.includes('.mp4')) {
+          ext = '.mp4';
+          mimeType = 'video/mp4';
+        } else if (ct.includes('image/png') || item.url.includes('.png')) {
+          ext = '.png';
+          mimeType = 'image/png';
+        } else if (ct.includes('image/webp') || item.url.includes('.webp')) {
+          ext = '.webp';
+          mimeType = 'image/webp';
+        }
+      } else if (item.thumbnail) {
+        // Fallback: at least save the thumbnail
+        const dlRes = await fetch(item.thumbnail);
+        if (!dlRes.ok) throw new Error('Could not download thumbnail');
+        buffer = Buffer.from(await dlRes.arrayBuffer());
+      } else {
+        throw new Error('No downloadable media found for this URL');
+      }
+    } catch (err) {
+      res.write(`event: error\ndata: ${JSON.stringify({ error: err.message })}\n\n`);
+      res.end();
+      return;
+    }
+
+    res.write(`event: progress\ndata: ${JSON.stringify({
+      status: 'uploading',
+      fileName: item.title || item.id,
+    })}\n\n`);
+
+    // Save to temp file
+    const safeName = (item.title || item.id || 'import').replace(/[^a-zA-Z0-9 ._-]/g, '').slice(0, 80);
+    tmpPath = path.join(os.tmpdir(), `cv_url_${Date.now()}${ext}`);
+    fs.writeFileSync(tmpPath, buffer);
+
+    // Upload to S3
+    const fileName = safeName + ext;
+    const s3Key = await s3Storage.uploadFile(accountId, tmpPath, fileName, mimeType, false);
+
+    // Create media entry
+    const id = 'url_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    const type = mimeType.startsWith('video/') ? 'video' : 'photo';
+
+    run(
+      `INSERT INTO media (id, account_id, person_name, person_email, type,
+        original_name, stored_name, mime_type, size_bytes,
+        has_thumbnail, drive_file_id, source_platform, source_category, source_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id, accountId, account.name, account.email || '', type,
+        fileName, fileName, mimeType, buffer.length,
+        0, s3Key, item.platform, item.category || 'post',
+        item.sourceUrl || url,
+      ]
+    );
+
+    // Trigger AI analysis
+    try {
+      const aiAnalysis = require('../services/aiAnalysis');
+      if (aiAnalysis.isConfigured()) aiAnalysis.enqueue(id);
+    } catch (_) {}
+
+    // Cleanup
+    try { fs.unlinkSync(tmpPath); } catch (_) {}
+
+    res.write(`event: done\ndata: ${JSON.stringify({
+      imported: 1,
+      total: 1,
+      mediaId: id,
+      title: item.title,
+      platform: item.platform,
+    })}\n\n`);
+    res.end();
+
+  } catch (err) {
+    console.error('URL import error:', err.message);
+    if (!res.headersSent) {
+      res.status(500).json({ error: err.message || 'Import failed' });
+    } else {
+      res.write(`event: error\ndata: ${JSON.stringify({ error: err.message })}\n\n`);
+      res.end();
+    }
+  }
+});
+
+// GET /api/social/:platform/scrape — search/browse without OAuth
+router.get('/:platform/scrape', async (req, res) => {
+  const { platform } = req.params;
+  const { q } = req.query;
+
+  if (platform === 'youtube') {
+    if (!q) return res.status(400).json({ error: 'Search query (q) is required' });
+
+    try {
+      const items = await scraper.searchYouTube(q, 20);
+      res.json({
+        items,
+        platform: 'YouTube',
+        scraperMode: true,
+      });
+    } catch (err) {
+      console.error('YouTube scrape error:', err.message);
+      res.status(500).json({ error: 'Search failed' });
+    }
+  } else {
+    res.status(400).json({ error: `Scrape browsing not available for ${platform}` });
+  }
 });
 
 module.exports = router;

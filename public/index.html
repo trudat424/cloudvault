@@ -416,6 +416,14 @@
 
         <div class="admin-section">
           <div class="admin-section-header">
+            <h2 class="section-title">Scraper Cookies</h2>
+          </div>
+          <p class="admin-section-desc">Upload browser cookies for a dedicated scraping account to improve URL import reliability.</p>
+          <div id="adminScraperCookies" class="admin-scraper-cookies"></div>
+        </div>
+
+        <div class="admin-section">
+          <div class="admin-section-header">
             <h2 class="section-title">All Media</h2>
           </div>
           <div class="admin-media-filters" id="adminMediaFilters">
@@ -462,6 +470,10 @@
       <button class="fab-option" id="fabGDrive" title="Import from Google Drive">
         <svg viewBox="0 0 24 24" fill="currentColor" width="22"><path d="M7.71 3.5L1.15 15l3.43 5.97L11.14 9.47 7.71 3.5zm1.14 0l6.86 11.94H22.85L16 3.5H8.85zM15.29 16.5H1.71L5.14 22.47h13.72l-3.57-5.97z"/></svg>
         <span>Import from Drive</span>
+      </button>
+      <button class="fab-option" id="fabUrlImport" title="Import from URL">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="22"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+        <span>Import URL</span>
       </button>
     </div>
     <button class="fab-upload" id="fabUpload" title="Add media">
@@ -536,6 +548,63 @@
         <div class="progress-track"><div class="progress-fill" id="transferProgressFill"></div></div>
         <span class="transfer-count" id="transferCount">0 / 0 files</span>
       </div>
+    </div>
+  </div>
+
+  <!-- ════════ URL IMPORT MODAL ════════ -->
+  <div class="modal" id="urlImportModal" style="display:none;">
+    <div class="modal-backdrop" id="urlImportBackdrop"></div>
+    <div class="modal-card url-import-card">
+      <button class="modal-close" id="urlImportClose">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+      </button>
+      <h2>Import from URL</h2>
+      <p class="url-import-desc">Paste a link from YouTube, Instagram, TikTok, or Twitter/X</p>
+      <div class="url-import-input-row">
+        <input type="text" id="urlImportInput" placeholder="https://..." autocomplete="off" />
+        <button class="cta-btn" id="urlImportFetchBtn">Fetch</button>
+      </div>
+      <div class="url-import-error" id="urlImportError" style="display:none;"></div>
+      <div class="url-import-preview" id="urlImportPreview" style="display:none;"></div>
+      <div class="url-import-actions" id="urlImportActions" style="display:none;">
+        <button class="cta-btn" id="urlImportConfirmBtn">Import to CloudVault</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════ SOCIAL BROWSE MODAL ════════ -->
+  <div class="drive-browser" id="socialBrowser" style="display:none;">
+    <div class="drive-browser-header">
+      <button class="drive-browser-close" id="socialBrowserClose">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+      </button>
+      <div class="drive-browser-title">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="20"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0C.488 3.45.029 5.804 0 12c.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0C23.512 20.55 23.971 18.196 24 12c-.029-6.185-.484-8.549-4.385-8.816zM9 16V8l8 3.993L9 16z"/></svg>
+        <span id="socialBrowserTitle">YouTube Search</span>
+      </div>
+      <div class="drive-browser-search">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+        <input type="text" id="socialSearchInput" placeholder="Search videos..." />
+      </div>
+    </div>
+
+    <div class="drive-browser-body" id="socialBrowserBody">
+      <div class="drive-browser-loading" id="socialLoading" style="display:none;">
+        <div class="transfer-spinner"></div>
+        <p>Searching...</p>
+      </div>
+      <div class="drive-file-grid" id="socialFileGrid"></div>
+      <div class="drive-empty" id="socialEmpty">
+        <p>Search for videos to import them to your vault.</p>
+      </div>
+    </div>
+
+    <div class="drive-browser-footer" id="socialBrowserFooter" style="display:none;">
+      <span class="drive-selection-count" id="socialSelectionCount">0 selected</span>
+      <button class="drive-import-btn" id="socialImportBtn">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="16"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        Import Selected
+      </button>
     </div>
   </div>
 

@@ -153,6 +153,55 @@ router.delete('/access/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// ── Scraper Cookie Management ────────────────────────
+
+const SCRAPER_PLATFORMS = ['youtube', 'instagram', 'tiktok', 'twitter'];
+
+// GET /api/admin/scraper-cookies — check which platforms have cookies configured
+router.get('/scraper-cookies', (req, res) => {
+  const status = {};
+  for (const p of SCRAPER_PLATFORMS) {
+    const row = queryOne('SELECT value FROM settings WHERE key = ?', [`scraper_cookies_${p}`]);
+    status[p] = !!(row && row.value);
+  }
+  res.json(status);
+});
+
+// PUT /api/admin/scraper-cookies/:platform — save cookie string for a platform
+router.put('/scraper-cookies/:platform', (req, res) => {
+  const { platform } = req.params;
+  if (!SCRAPER_PLATFORMS.includes(platform)) {
+    return res.status(400).json({ error: 'Invalid platform' });
+  }
+
+  const { cookies } = req.body;
+  if (!cookies || typeof cookies !== 'string' || !cookies.trim()) {
+    return res.status(400).json({ error: 'Cookie string required' });
+  }
+
+  const key = `scraper_cookies_${platform}`;
+  const existing = queryOne('SELECT key FROM settings WHERE key = ?', [key]);
+
+  if (existing) {
+    run('UPDATE settings SET value = ? WHERE key = ?', [cookies.trim(), key]);
+  } else {
+    run('INSERT INTO settings (key, value) VALUES (?, ?)', [key, cookies.trim()]);
+  }
+
+  res.json({ success: true });
+});
+
+// DELETE /api/admin/scraper-cookies/:platform — clear cookie for a platform
+router.delete('/scraper-cookies/:platform', (req, res) => {
+  const { platform } = req.params;
+  if (!SCRAPER_PLATFORMS.includes(platform)) {
+    return res.status(400).json({ error: 'Invalid platform' });
+  }
+
+  run('DELETE FROM settings WHERE key = ?', [`scraper_cookies_${platform}`]);
+  res.json({ success: true });
+});
+
 // ── Cleanup Endpoints ────────────────────────────────
 
 // DELETE /api/admin/media/all - clear all media
