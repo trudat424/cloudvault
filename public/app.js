@@ -607,7 +607,7 @@ async function loadDriveFiles(append = false) {
   }
 
   try {
-    let url = '/api/gdrive/files?';
+    let url = '/gdrive/files?';
     const search = $('#driveSearchInput').value.trim();
     if (search) url += `q=${encodeURIComponent(search)}&`;
     if (append && driveNextPageToken) url += `pageToken=${encodeURIComponent(driveNextPageToken)}&`;
