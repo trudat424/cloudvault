@@ -76,7 +76,6 @@ router.get('/callback', async (req, res) => {
       saveAccountToken(accountId, 'gdrive_refresh_token', tokens.refresh_token);
     }
     saveAccountToken(accountId, 'gdrive_token_expiry', String(tokens.expiry_date || 0));
-    saveAccountToken(accountId, 'gdrive_connected', 'true');
     saveAccountToken(accountId, 'gdrive_scope', SCOPES.join(' '));
 
     // Fetch Google email and store it on the account
@@ -141,7 +140,6 @@ router.get('/status', async (req, res) => {
     saveAccountToken(accountId, 'gdrive_access_token', null);
     saveAccountToken(accountId, 'gdrive_refresh_token', null);
     saveAccountToken(accountId, 'gdrive_token_expiry', null);
-    saveAccountToken(accountId, 'gdrive_connected', null);
     res.json({ connected: false });
   }
 });
@@ -249,7 +247,6 @@ router.delete('/disconnect', async (req, res) => {
   saveAccountToken(accountId, 'gdrive_access_token', null);
   saveAccountToken(accountId, 'gdrive_refresh_token', null);
   saveAccountToken(accountId, 'gdrive_token_expiry', null);
-  saveAccountToken(accountId, 'gdrive_connected', null);
   saveAccountToken(accountId, 'gdrive_email', null);
   saveAccountToken(accountId, 'gdrive_scope', null);
 
