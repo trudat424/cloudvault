@@ -1,7 +1,7 @@
 /**
- * Google Drive Storage Service
- * Handles uploading, downloading, and deleting files from Google Drive.
- * Uses the "CloudVault" folder (auto-created) with a "thumbnails" subfolder.
+ * Google Drive Storage Service (Per-User)
+ * Each user has their own Google Drive connection.
+ * Tokens are stored on the accounts table, not in global settings.
  */
 
 const { google } = require('googleapis');
@@ -9,53 +9,55 @@ const fs = require('fs');
 const { queryOne, run } = require('../db/database');
 const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI } = require('../config');
 
-// ── Auth helpers (shared with routes/gdrive.js) ──────────────
+// ── Auth helpers ─────────────────────────────────────────────
 
 function getOAuth2Client() {
   return new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI);
 }
 
-function saveSetting(key, value) {
-  const existing = queryOne('SELECT value FROM settings WHERE key = ?', [key]);
-  if (existing) {
-    run('UPDATE settings SET value = ? WHERE key = ?', [value, key]);
-  } else {
-    run('INSERT INTO settings (key, value) VALUES (?, ?)', [key, value]);
-  }
+/**
+ * Save a Drive token field on a user's account row.
+ */
+function saveAccountToken(accountId, column, value) {
+  const allowed = ['gdrive_access_token', 'gdrive_refresh_token', 'gdrive_token_expiry', 'gdrive_email', 'gdrive_scope'];
+  if (!allowed.includes(column)) throw new Error('Invalid token column: ' + column);
+  run(`UPDATE accounts SET ${column} = ? WHERE id = ?`, [value, accountId]);
 }
 
-function getAuthedClient() {
-  const accessToken = queryOne("SELECT value FROM settings WHERE key = 'gdrive_access_token'");
-  const refreshToken = queryOne("SELECT value FROM settings WHERE key = 'gdrive_refresh_token'");
-  const tokenExpiry = queryOne("SELECT value FROM settings WHERE key = 'gdrive_token_expiry'");
-
-  if (!accessToken || !refreshToken) return null;
+/**
+ * Get an authenticated OAuth2 client for a specific user.
+ */
+function getAuthedClient(accountId) {
+  if (!accountId) return null;
+  const account = queryOne(
+    'SELECT gdrive_access_token, gdrive_refresh_token, gdrive_token_expiry FROM accounts WHERE id = ?',
+    [accountId]
+  );
+  if (!account || !account.gdrive_access_token || !account.gdrive_refresh_token) return null;
 
   const client = getOAuth2Client();
   client.setCredentials({
-    access_token: accessToken.value,
-    refresh_token: refreshToken.value,
-    expiry_date: tokenExpiry ? parseInt(tokenExpiry.value) : 0,
+    access_token: account.gdrive_access_token,
+    refresh_token: account.gdrive_refresh_token,
+    expiry_date: account.gdrive_token_expiry ? parseInt(account.gdrive_token_expiry) : 0,
   });
-
   return client;
 }
 
 // ── Drive helpers ────────────────────────────────────────────
 
-let _cachedFolderId = null;
-let _cachedThumbFolderId = null;
+// Per-user folder cache: Map<accountId, { folderId, thumbFolderId }>
+const _folderCache = new Map();
 
-async function getDriveInstance() {
-  const client = getAuthedClient();
+async function getDriveInstance(accountId) {
+  const client = getAuthedClient(accountId);
   if (!client) return null;
 
-  // Refresh token if needed
   const tokenInfo = client.credentials;
   if (tokenInfo.expiry_date && tokenInfo.expiry_date < Date.now()) {
     const { credentials } = await client.refreshAccessToken();
-    saveSetting('gdrive_access_token', credentials.access_token);
-    saveSetting('gdrive_token_expiry', String(credentials.expiry_date || 0));
+    saveAccountToken(accountId, 'gdrive_access_token', credentials.access_token);
+    saveAccountToken(accountId, 'gdrive_token_expiry', String(credentials.expiry_date || 0));
   }
 
   return google.drive({ version: 'v3', auth: client });
@@ -65,104 +67,63 @@ async function getOrCreateFolder(drive, folderName, parentId) {
   let q = `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
   if (parentId) q += ` and '${parentId}' in parents`;
 
-  const search = await drive.files.list({
-    q,
-    fields: 'files(id, name)',
-    spaces: 'drive',
-  });
+  const search = await drive.files.list({ q, fields: 'files(id, name)', spaces: 'drive' });
 
-  if (search.data.files.length > 0) {
-    return search.data.files[0].id;
-  }
+  if (search.data.files.length > 0) return search.data.files[0].id;
 
-  const requestBody = {
-    name: folderName,
-    mimeType: 'application/vnd.google-apps.folder',
-  };
+  const requestBody = { name: folderName, mimeType: 'application/vnd.google-apps.folder' };
   if (parentId) requestBody.parents = [parentId];
 
-  const folder = await drive.files.create({
-    requestBody,
-    fields: 'id',
-  });
-
+  const folder = await drive.files.create({ requestBody, fields: 'id' });
   return folder.data.id;
 }
 
-async function getCloudVaultFolderId(drive) {
-  if (!_cachedFolderId) {
-    _cachedFolderId = await getOrCreateFolder(drive, 'CloudVault', null);
-  }
-  return _cachedFolderId;
+async function getCloudVaultFolderId(drive, accountId) {
+  const cached = _folderCache.get(accountId);
+  if (cached && cached.folderId) return cached.folderId;
+  const folderId = await getOrCreateFolder(drive, 'CloudVault', null);
+  _folderCache.set(accountId, { ...(_folderCache.get(accountId) || {}), folderId });
+  return folderId;
 }
 
-async function getThumbnailsFolderId(drive) {
-  if (!_cachedThumbFolderId) {
-    const parentId = await getCloudVaultFolderId(drive);
-    _cachedThumbFolderId = await getOrCreateFolder(drive, 'thumbnails', parentId);
-  }
-  return _cachedThumbFolderId;
+async function getThumbnailsFolderId(drive, accountId) {
+  const cached = _folderCache.get(accountId);
+  if (cached && cached.thumbFolderId) return cached.thumbFolderId;
+  const parentId = await getCloudVaultFolderId(drive, accountId);
+  const thumbFolderId = await getOrCreateFolder(drive, 'thumbnails', parentId);
+  _folderCache.set(accountId, { ...(_folderCache.get(accountId) || {}), thumbFolderId });
+  return thumbFolderId;
 }
 
 // ── Public API ───────────────────────────────────────────────
 
-/**
- * Check if Google Drive is connected and ready for storage.
- */
-function isConnected() {
-  return getAuthedClient() !== null;
+function isConnected(accountId) {
+  return getAuthedClient(accountId) !== null;
 }
 
-/**
- * Upload a local file to Google Drive.
- * @param {string} localPath - Path to the file on disk (temp)
- * @param {string} fileName - Display name in Drive
- * @param {string} mimeType - e.g. 'image/jpeg'
- * @param {boolean} isThumbnail - If true, uploads to CloudVault/thumbnails/
- * @returns {string} Google Drive file ID
- */
-async function uploadFile(localPath, fileName, mimeType, isThumbnail = false) {
-  const drive = await getDriveInstance();
+async function uploadFile(accountId, localPath, fileName, mimeType, isThumbnail = false) {
+  const drive = await getDriveInstance(accountId);
   if (!drive) throw new Error('Google Drive not connected');
 
   const folderId = isThumbnail
-    ? await getThumbnailsFolderId(drive)
-    : await getCloudVaultFolderId(drive);
+    ? await getThumbnailsFolderId(drive, accountId)
+    : await getCloudVaultFolderId(drive, accountId);
 
   const result = await drive.files.create({
-    requestBody: {
-      name: fileName,
-      parents: [folderId],
-    },
-    media: {
-      mimeType,
-      body: fs.createReadStream(localPath),
-    },
+    requestBody: { name: fileName, parents: [folderId] },
+    media: { mimeType, body: fs.createReadStream(localPath) },
     fields: 'id',
   });
 
   return result.data.id;
 }
 
-/**
- * Get a readable stream for a file stored in Google Drive.
- * @param {string} driveFileId - The Drive file ID
- * @returns {{ stream: ReadableStream, mimeType: string, size: number }}
- */
-async function getFileStream(driveFileId) {
-  const drive = await getDriveInstance();
+async function getFileStream(accountId, driveFileId) {
+  const drive = await getDriveInstance(accountId);
   if (!drive) throw new Error('Google Drive not connected');
 
-  // Get file metadata for content type
-  const meta = await drive.files.get({
-    fileId: driveFileId,
-    fields: 'mimeType, size, name',
-  });
-
-  const response = await drive.files.get(
-    { fileId: driveFileId, alt: 'media' },
-    { responseType: 'stream' }
-  );
+  const meta = await drive.files.get({ fileId: driveFileId, fields: 'mimeType, size, name' });
+  const response = await drive.files.get({ fileId: driveFileId, alt: 'media' }, { responseType: 'stream' });
 
   return {
     stream: response.data,
@@ -172,52 +133,34 @@ async function getFileStream(driveFileId) {
   };
 }
 
-/**
- * Delete a file from Google Drive.
- * @param {string} driveFileId - The Drive file ID
- */
-async function deleteFile(driveFileId) {
-  const drive = await getDriveInstance();
-  if (!drive) return; // silently fail if not connected
+async function deleteFile(accountId, driveFileId) {
+  const drive = await getDriveInstance(accountId);
+  if (!drive) return;
 
   try {
     await drive.files.delete({ fileId: driveFileId });
   } catch (err) {
-    // Ignore 404 (already deleted) errors
-    if (err.code !== 404) {
-      console.error('Drive delete error:', err.message);
-    }
+    if (err.code !== 404) console.error('Drive delete error:', err.message);
   }
 }
 
-/**
- * Get the Google Drive storage quota for the connected account.
- * Returns { limit, usage, usageInDrive, usageInDriveTrash } in bytes.
- * limit = -1 means unlimited storage.
- */
-async function getStorageQuota() {
-  const drive = await getDriveInstance();
+async function getStorageQuota(accountId) {
+  const drive = await getDriveInstance(accountId);
   if (!drive) throw new Error('Google Drive not connected');
 
-  const about = await drive.about.get({
-    fields: 'storageQuota',
-  });
-
+  const about = await drive.about.get({ fields: 'storageQuota' });
   const q = about.data.storageQuota;
   return {
-    limit: q.limit ? parseInt(q.limit) : -1,        // -1 = unlimited
+    limit: q.limit ? parseInt(q.limit) : -1,
     usage: parseInt(q.usage) || 0,
     usageInDrive: parseInt(q.usageInDrive) || 0,
     usageInDriveTrash: parseInt(q.usageInDriveTrash) || 0,
   };
 }
 
-/**
- * Clear folder caches (call after disconnect).
- */
-function clearCache() {
-  _cachedFolderId = null;
-  _cachedThumbFolderId = null;
+function clearCache(accountId) {
+  if (accountId) _folderCache.delete(accountId);
+  else _folderCache.clear();
 }
 
 module.exports = {
@@ -232,5 +175,5 @@ module.exports = {
   getThumbnailsFolderId,
   getAuthedClient,
   getOAuth2Client,
-  saveSetting,
+  saveAccountToken,
 };

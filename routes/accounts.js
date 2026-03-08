@@ -33,9 +33,13 @@ router.post('/signup', (req, res) => {
   const connectedAt = new Date().toISOString();
   const email = username + '@cloudvault.local';
 
+  // First user to sign up gets admin role automatically
+  const userCount = queryOne('SELECT COUNT(*) as count FROM accounts WHERE username IS NOT NULL');
+  const role = (userCount && userCount.count === 0) ? 'admin' : 'viewer';
+
   run(
-    'INSERT INTO accounts (id, name, username, email, type, password, connected_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [id, name, username, email, 'icloud', password, connectedAt]
+    'INSERT INTO accounts (id, name, username, email, type, password, role, connected_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [id, name, username, email, 'local', password, role, connectedAt]
   );
 
   const account = queryOne('SELECT * FROM accounts WHERE id = ?', [id]);
@@ -160,8 +164,11 @@ function mapAccount(row) {
     username: row.username || null,
     email: row.email,
     type: row.type,
+    role: row.role || 'viewer',
     hasPassword: !!row.password,
     connectedAt: row.connected_at,
+    gdriveConnected: !!(row.gdrive_access_token && row.gdrive_refresh_token),
+    gdriveEmail: row.gdrive_email || null,
   };
 }
 

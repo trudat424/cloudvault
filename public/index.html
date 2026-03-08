@@ -391,6 +391,28 @@
           </div>
         </div>
 
+        <div class="admin-section">
+          <div class="admin-section-header">
+            <h2 class="section-title">Users & Roles</h2>
+          </div>
+          <p class="admin-section-desc">Manage user roles: Admin (full control), Member (can upload & view all), Viewer (view-only, admin grants access)</p>
+          <div id="adminUsersList" class="admin-users-list"></div>
+        </div>
+
+        <div class="admin-section">
+          <div class="admin-section-header">
+            <h2 class="section-title">Content Access</h2>
+          </div>
+          <p class="admin-section-desc">Grant users permission to view another user's content</p>
+          <div class="access-grant-form">
+            <select id="accessViewerSelect"><option value="">Select viewer...</option></select>
+            <span>can view</span>
+            <select id="accessOwnerSelect"><option value="">Select owner...</option></select>
+            <button class="btn btn-primary" onclick="grantAccess()">Grant</button>
+          </div>
+          <div id="adminAccessList" class="admin-access-list"></div>
+        </div>
+
         <div class="admin-section danger-zone">
           <div class="admin-section-header">
             <h2 class="section-title" style="color: var(--red);">Danger Zone</h2>

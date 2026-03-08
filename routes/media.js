@@ -10,17 +10,53 @@ const { extractMetadata } = require('../services/metadata');
 const { STORAGE_LIMIT_GB } = require('../config');
 const driveStorage = require('../services/driveStorage');
 
-// GET /api/media/stats - dashboard stats
+// Helper: extract accountId from X-Account-Id header or query param
+function getAccountId(req) {
+  return req.headers['x-account-id'] || req.query.account_id || null;
+}
+
+// Helper: look up the account's role from the database
+function getAccountRole(accountId) {
+  if (!accountId) return null;
+  const account = queryOne('SELECT role FROM accounts WHERE id = ?', [accountId]);
+  return account ? account.role : null;
+}
+
+// GET /api/media/stats - dashboard stats (filtered by role)
 router.get('/stats', (req, res) => {
-  const rows = queryAll(`
-    SELECT
-      COUNT(*) as total,
-      COALESCE(SUM(CASE WHEN type = 'photo' THEN 1 ELSE 0 END), 0) as photos,
-      COALESCE(SUM(CASE WHEN type = 'video' THEN 1 ELSE 0 END), 0) as videos,
-      COUNT(DISTINCT account_id) as people,
-      COALESCE(SUM(size_bytes), 0) as totalBytes
-    FROM media
-  `);
+  const accountId = getAccountId(req);
+  const role = getAccountRole(accountId);
+
+  let sql;
+  let params = [];
+
+  if (role === 'admin') {
+    // Admin sees aggregate of all media
+    sql = `
+      SELECT
+        COUNT(*) as total,
+        COALESCE(SUM(CASE WHEN type = 'photo' THEN 1 ELSE 0 END), 0) as photos,
+        COALESCE(SUM(CASE WHEN type = 'video' THEN 1 ELSE 0 END), 0) as videos,
+        COUNT(DISTINCT account_id) as people,
+        COALESCE(SUM(size_bytes), 0) as totalBytes
+      FROM media
+    `;
+  } else {
+    // Member/Viewer: own media + shared media
+    sql = `
+      SELECT
+        COUNT(*) as total,
+        COALESCE(SUM(CASE WHEN type = 'photo' THEN 1 ELSE 0 END), 0) as photos,
+        COALESCE(SUM(CASE WHEN type = 'video' THEN 1 ELSE 0 END), 0) as videos,
+        COUNT(DISTINCT account_id) as people,
+        COALESCE(SUM(size_bytes), 0) as totalBytes
+      FROM media
+      WHERE account_id = ? OR account_id IN (SELECT owner_account_id FROM share_access WHERE viewer_account_id = ?)
+    `;
+    params = [accountId, accountId];
+  }
+
+  const rows = queryAll(sql, params);
   const stats = rows[0] || { total: 0, photos: 0, videos: 0, people: 0, totalBytes: 0 };
   res.json({
     total: stats.total,
@@ -32,19 +68,45 @@ router.get('/stats', (req, res) => {
   });
 });
 
-// GET /api/media/people - aggregated per-person stats
+// GET /api/media/people - aggregated per-person stats (filtered by role)
 router.get('/people', (req, res) => {
-  const rows = queryAll(`
-    SELECT
-      account_id,
-      person_name,
-      person_email,
-      COALESCE(SUM(CASE WHEN type = 'photo' THEN 1 ELSE 0 END), 0) as photos,
-      COALESCE(SUM(CASE WHEN type = 'video' THEN 1 ELSE 0 END), 0) as videos,
-      COALESCE(SUM(size_bytes), 0) as totalBytes
-    FROM media
-    GROUP BY account_id
-  `);
+  const accountId = getAccountId(req);
+  const role = getAccountRole(accountId);
+
+  let sql;
+  let params = [];
+
+  if (role === 'admin') {
+    // Admin sees all people
+    sql = `
+      SELECT
+        account_id,
+        person_name,
+        person_email,
+        COALESCE(SUM(CASE WHEN type = 'photo' THEN 1 ELSE 0 END), 0) as photos,
+        COALESCE(SUM(CASE WHEN type = 'video' THEN 1 ELSE 0 END), 0) as videos,
+        COALESCE(SUM(size_bytes), 0) as totalBytes
+      FROM media
+      GROUP BY account_id
+    `;
+  } else {
+    // Member/Viewer: own + shared
+    sql = `
+      SELECT
+        account_id,
+        person_name,
+        person_email,
+        COALESCE(SUM(CASE WHEN type = 'photo' THEN 1 ELSE 0 END), 0) as photos,
+        COALESCE(SUM(CASE WHEN type = 'video' THEN 1 ELSE 0 END), 0) as videos,
+        COALESCE(SUM(size_bytes), 0) as totalBytes
+      FROM media
+      WHERE account_id = ? OR account_id IN (SELECT owner_account_id FROM share_access WHERE viewer_account_id = ?)
+      GROUP BY account_id
+    `;
+    params = [accountId, accountId];
+  }
+
+  const rows = queryAll(sql, params);
   res.json(rows.map(r => ({
     accountId: r.account_id,
     personName: r.person_name,
@@ -62,7 +124,8 @@ router.get('/file/:id', async (req, res) => {
   if (!row.drive_file_id) return res.status(404).json({ error: 'File not in cloud storage' });
 
   try {
-    const { stream, mimeType, size } = await driveStorage.getFileStream(row.drive_file_id);
+    // Use the media OWNER's account for Drive access (files live in the owner's Drive)
+    const { stream, mimeType, size } = await driveStorage.getFileStream(row.account_id, row.drive_file_id);
     res.set('Content-Type', mimeType || row.mime_type);
     if (size) res.set('Content-Length', String(size));
     res.set('Cache-Control', 'public, max-age=86400');
@@ -80,7 +143,8 @@ router.get('/thumb/:id', async (req, res) => {
   if (!row.drive_thumb_id) return res.status(404).json({ error: 'Thumbnail not available' });
 
   try {
-    const { stream } = await driveStorage.getFileStream(row.drive_thumb_id);
+    // Use the media OWNER's account for Drive access (files live in the owner's Drive)
+    const { stream } = await driveStorage.getFileStream(row.account_id, row.drive_thumb_id);
     res.set('Content-Type', 'image/jpeg');
     res.set('Cache-Control', 'public, max-age=604800');
     stream.pipe(res);
@@ -90,12 +154,24 @@ router.get('/thumb/:id', async (req, res) => {
   }
 });
 
-// GET /api/media - list with filters
+// GET /api/media - list with filters (server-side filtering by role)
 router.get('/', (req, res) => {
   const { type, account_id, sort, date, search, limit = 200, offset = 0 } = req.query;
 
+  const requestAccountId = getAccountId(req);
+  const role = getAccountRole(requestAccountId);
+
   let sql = 'SELECT * FROM media WHERE 1=1';
   const params = [];
+
+  // Role-based visibility filter
+  if (role === 'admin') {
+    // Admin sees everything - no account_id filter applied automatically
+  } else {
+    // Member/Viewer: own media + media shared via share_access
+    sql += ' AND (account_id = ? OR account_id IN (SELECT owner_account_id FROM share_access WHERE viewer_account_id = ?))';
+    params.push(requestAccountId, requestAccountId);
+  }
 
   if (type && type !== 'all') {
     sql += ' AND type = ?';
@@ -138,13 +214,22 @@ router.get('/:id', (req, res) => {
   res.json(mapMediaRow(row));
 });
 
-// POST /api/media/upload - upload files to Google Drive
+// POST /api/media/upload - upload files to Google Drive (role enforcement)
 router.post('/upload', upload.array('files', 20), async (req, res) => {
   const { account_id } = req.body;
   if (!account_id) return res.status(400).json({ error: 'account_id required' });
 
-  // Check Drive connection
-  if (!driveStorage.isConnected()) {
+  // Role enforcement: viewers cannot upload
+  const role = getAccountRole(account_id);
+  if (role === 'viewer') {
+    for (const file of req.files) {
+      try { fs.unlinkSync(file.path); } catch (e) { /* ignore */ }
+    }
+    return res.status(403).json({ error: 'Viewers cannot upload' });
+  }
+
+  // Check Drive connection (accountId as first param)
+  if (!driveStorage.isConnected(account_id)) {
     for (const file of req.files) {
       try { fs.unlinkSync(file.path); } catch (e) { /* ignore */ }
     }
@@ -169,8 +254,8 @@ router.post('/upload', upload.array('files', 20), async (req, res) => {
         meta = await extractMetadata(file.path);
       }
 
-      // Upload original to Google Drive
-      const driveFileId = await driveStorage.uploadFile(file.path, file.originalname, file.mimetype, false);
+      // Upload original to Google Drive (accountId as first param)
+      const driveFileId = await driveStorage.uploadFile(account_id, file.path, file.originalname, file.mimetype, false);
 
       // Generate + upload thumbnail for images
       let hasThumbnail = 0;
@@ -179,7 +264,7 @@ router.post('/upload', upload.array('files', 20), async (req, res) => {
         const thumbPath = path.join(tmpDir, id + '_thumb.jpg');
         hasThumbnail = (await generateThumbnail(file.path, thumbPath)) ? 1 : 0;
         if (hasThumbnail) {
-          driveThumbId = await driveStorage.uploadFile(thumbPath, id + '.jpg', 'image/jpeg', true);
+          driveThumbId = await driveStorage.uploadFile(account_id, thumbPath, id + '.jpg', 'image/jpeg', true);
           try { fs.unlinkSync(thumbPath); } catch (e) { /* ignore */ }
         }
       }
@@ -217,14 +302,21 @@ router.post('/upload', upload.array('files', 20), async (req, res) => {
   res.json({ media: results, count: results.length });
 });
 
-// DELETE /api/media/:id - delete single
+// DELETE /api/media/:id - delete single (role enforcement)
 router.delete('/:id', async (req, res) => {
   const row = queryOne('SELECT * FROM media WHERE id = ?', [req.params.id]);
   if (!row) return res.status(404).json({ error: 'Not found' });
 
-  // Delete files from Google Drive
-  if (row.drive_file_id) await driveStorage.deleteFile(row.drive_file_id);
-  if (row.drive_thumb_id) await driveStorage.deleteFile(row.drive_thumb_id);
+  // Role enforcement: viewers cannot delete
+  const accountId = getAccountId(req);
+  const role = getAccountRole(accountId);
+  if (role === 'viewer') {
+    return res.status(403).json({ error: 'Viewers cannot delete' });
+  }
+
+  // Delete files from Google Drive (use media owner's accountId)
+  if (row.drive_file_id) await driveStorage.deleteFile(row.account_id, row.drive_file_id);
+  if (row.drive_thumb_id) await driveStorage.deleteFile(row.account_id, row.drive_thumb_id);
 
   run('DELETE FROM media WHERE id = ?', [req.params.id]);
   res.json({ success: true });

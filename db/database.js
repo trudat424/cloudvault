@@ -46,6 +46,58 @@ async function initDatabase() {
   // Create unique index on username (if not exists)
   try { database.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_username ON accounts(username) WHERE username IS NOT NULL"); } catch(e) { /* index already exists */ }
 
+  // Migration: add role column to accounts (admin|member|viewer)
+  try { database.run("ALTER TABLE accounts ADD COLUMN role TEXT DEFAULT 'viewer'"); } catch(e) { /* exists */ }
+
+  // Migration: add per-user Google Drive OAuth columns to accounts
+  try { database.run("ALTER TABLE accounts ADD COLUMN gdrive_access_token TEXT"); } catch(e) { /* exists */ }
+  try { database.run("ALTER TABLE accounts ADD COLUMN gdrive_refresh_token TEXT"); } catch(e) { /* exists */ }
+  try { database.run("ALTER TABLE accounts ADD COLUMN gdrive_token_expiry TEXT"); } catch(e) { /* exists */ }
+  try { database.run("ALTER TABLE accounts ADD COLUMN gdrive_email TEXT"); } catch(e) { /* exists */ }
+  try { database.run("ALTER TABLE accounts ADD COLUMN gdrive_scope TEXT"); } catch(e) { /* exists */ }
+
+  // Data migration: move global Drive tokens from settings → first user account
+  const globalToken = database.exec("SELECT value FROM settings WHERE key = 'gdrive_access_token'");
+  if (globalToken.length > 0 && globalToken[0].values.length > 0) {
+    const firstUser = database.exec("SELECT id FROM accounts WHERE username IS NOT NULL LIMIT 1");
+    if (firstUser.length > 0 && firstUser[0].values.length > 0) {
+      const uid = firstUser[0].values[0][0];
+      const getVal = (k) => {
+        const r = database.exec(`SELECT value FROM settings WHERE key = '${k}'`);
+        return r.length > 0 && r[0].values.length > 0 ? r[0].values[0][0] : null;
+      };
+      database.run(
+        `UPDATE accounts SET gdrive_access_token = ?, gdrive_refresh_token = ?,
+         gdrive_token_expiry = ?, gdrive_scope = ?, role = 'admin' WHERE id = ?`,
+        [getVal('gdrive_access_token'), getVal('gdrive_refresh_token'),
+         getVal('gdrive_token_expiry'), getVal('gdrive_scope'), uid]
+      );
+      database.run("DELETE FROM settings WHERE key IN ('gdrive_access_token','gdrive_refresh_token','gdrive_token_expiry','gdrive_connected','gdrive_scope')");
+    }
+  }
+
+  // Data migration: reassign media from orphaned gdrive-type accounts to user accounts
+  const gdriveAccounts = database.exec("SELECT id, email FROM accounts WHERE type = 'gdrive'");
+  if (gdriveAccounts.length > 0) {
+    for (const row of gdriveAccounts[0].values) {
+      const [gdriveAccId, gdriveEmail] = row;
+      // Find a user account that has this gdrive_email
+      let match = database.exec(
+        "SELECT id FROM accounts WHERE gdrive_email = ? AND username IS NOT NULL LIMIT 1",
+        [gdriveEmail]
+      );
+      // Fallback: assign to first user account
+      if (!match.length || !match[0].values.length) {
+        match = database.exec("SELECT id FROM accounts WHERE username IS NOT NULL LIMIT 1");
+      }
+      if (match.length > 0 && match[0].values.length > 0) {
+        const userAccId = match[0].values[0][0];
+        database.run("UPDATE media SET account_id = ? WHERE account_id = ?", [userAccId, gdriveAccId]);
+      }
+      database.run("DELETE FROM accounts WHERE id = ?", [gdriveAccId]);
+    }
+  }
+
   // Seed admin password if not set
   const result = database.exec("SELECT value FROM settings WHERE key = 'admin_password'");
   if (result.length === 0) {

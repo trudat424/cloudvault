@@ -16,13 +16,15 @@ const driveStorage = require('../services/driveStorage');
 const SCOPES = [
   'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/drive.readonly',
+  'https://www.googleapis.com/auth/userinfo.email',
 ];
 
 // Reuse shared helpers from driveStorage
-const { getOAuth2Client, getAuthedClient, saveSetting } = driveStorage;
+const { getOAuth2Client, getAuthedClient, saveAccountToken } = driveStorage;
 
-function deleteSetting(key) {
-  run('DELETE FROM settings WHERE key = ?', [key]);
+// Helper: read the account ID from the request header
+function getAccountId(req) {
+  return req.headers['x-account-id'] || null;
 }
 
 // GET /api/gdrive/auth — redirect user to Google consent screen
@@ -31,11 +33,17 @@ router.get('/auth', (req, res) => {
     return res.status(500).json({ error: 'Google OAuth credentials not configured' });
   }
 
+  const accountId = req.query.accountId;
+  if (!accountId) {
+    return res.status(400).json({ error: 'accountId query parameter is required' });
+  }
+
   const client = getOAuth2Client();
   const authUrl = client.generateAuthUrl({
     access_type: 'offline',
     scope: SCOPES,
     prompt: 'consent',
+    state: accountId,
   });
 
   res.redirect(authUrl);
@@ -43,7 +51,8 @@ router.get('/auth', (req, res) => {
 
 // GET /api/gdrive/callback — handle OAuth redirect from Google
 router.get('/callback', async (req, res) => {
-  const { code, error } = req.query;
+  const { code, error, state } = req.query;
+  const accountId = state;
 
   if (error) {
     return res.redirect('/?gdrive=error&reason=' + encodeURIComponent(error));
@@ -53,17 +62,31 @@ router.get('/callback', async (req, res) => {
     return res.redirect('/?gdrive=error&reason=no_code');
   }
 
+  if (!accountId) {
+    return res.redirect('/?gdrive=error&reason=missing_account_id');
+  }
+
   try {
     const client = getOAuth2Client();
     const { tokens } = await client.getToken(code);
 
-    saveSetting('gdrive_access_token', tokens.access_token);
+    // Save tokens on the user's account row
+    saveAccountToken(accountId, 'gdrive_access_token', tokens.access_token);
     if (tokens.refresh_token) {
-      saveSetting('gdrive_refresh_token', tokens.refresh_token);
+      saveAccountToken(accountId, 'gdrive_refresh_token', tokens.refresh_token);
     }
-    saveSetting('gdrive_token_expiry', String(tokens.expiry_date || 0));
-    saveSetting('gdrive_connected', 'true');
-    saveSetting('gdrive_scope', SCOPES.join(' '));
+    saveAccountToken(accountId, 'gdrive_token_expiry', String(tokens.expiry_date || 0));
+    saveAccountToken(accountId, 'gdrive_connected', 'true');
+    saveAccountToken(accountId, 'gdrive_scope', SCOPES.join(' '));
+
+    // Fetch Google email and store it on the account
+    client.setCredentials(tokens);
+    const drive = google.drive({ version: 'v3', auth: client });
+    const about = await drive.about.get({ fields: 'user' });
+    const email = about.data.user.emailAddress;
+    if (email) {
+      saveAccountToken(accountId, 'gdrive_email', email);
+    }
 
     res.redirect('/?gdrive=connected');
   } catch (err) {
@@ -74,18 +97,23 @@ router.get('/callback', async (req, res) => {
 
 // GET /api/gdrive/status — check if connected with valid tokens
 router.get('/status', async (req, res) => {
-  const client = getAuthedClient();
+  const accountId = getAccountId(req);
+  if (!accountId) {
+    return res.status(400).json({ error: 'X-Account-Id header is required' });
+  }
+
+  const client = getAuthedClient(accountId);
   if (!client) {
     return res.json({ connected: false });
   }
 
   try {
-    // Try to get token info / refresh if needed
+    // Try to refresh if needed
     const tokenInfo = client.credentials;
     if (tokenInfo.expiry_date && tokenInfo.expiry_date < Date.now()) {
       const { credentials } = await client.refreshAccessToken();
-      saveSetting('gdrive_access_token', credentials.access_token);
-      saveSetting('gdrive_token_expiry', String(credentials.expiry_date || 0));
+      saveAccountToken(accountId, 'gdrive_access_token', credentials.access_token);
+      saveAccountToken(accountId, 'gdrive_token_expiry', String(credentials.expiry_date || 0));
     }
 
     // Verify token works by getting user info
@@ -93,8 +121,9 @@ router.get('/status', async (req, res) => {
     const about = await drive.about.get({ fields: 'user' });
 
     // Check if stored scope matches current required scope
-    const storedScope = queryOne("SELECT value FROM settings WHERE key = 'gdrive_scope'");
-    const needsReauth = !storedScope || storedScope.value !== SCOPES.join(' ');
+    const account = queryOne('SELECT * FROM accounts WHERE id = ?', [accountId]);
+    const storedScope = account ? account.gdrive_scope : null;
+    const needsReauth = !storedScope || storedScope !== SCOPES.join(' ');
 
     // Refresh credentials to get latest access token
     const creds = client.credentials;
@@ -109,18 +138,23 @@ router.get('/status', async (req, res) => {
   } catch (err) {
     console.error('GDrive status check failed:', err.message);
     // Token invalid — clean up
-    deleteSetting('gdrive_access_token');
-    deleteSetting('gdrive_refresh_token');
-    deleteSetting('gdrive_token_expiry');
-    deleteSetting('gdrive_connected');
+    saveAccountToken(accountId, 'gdrive_access_token', null);
+    saveAccountToken(accountId, 'gdrive_refresh_token', null);
+    saveAccountToken(accountId, 'gdrive_token_expiry', null);
+    saveAccountToken(accountId, 'gdrive_connected', null);
     res.json({ connected: false });
   }
 });
 
 // GET /api/gdrive/quota — real Google Drive storage quota
 router.get('/quota', async (req, res) => {
+  const accountId = getAccountId(req);
+  if (!accountId) {
+    return res.status(400).json({ error: 'X-Account-Id header is required' });
+  }
+
   try {
-    const quota = await driveStorage.getStorageQuota();
+    const quota = await driveStorage.getStorageQuota(accountId);
     const limitGB = quota.limit > 0 ? parseFloat((quota.limit / (1024 ** 3)).toFixed(2)) : -1;
     const usageGB = parseFloat((quota.usage / (1024 ** 3)).toFixed(2));
     const usageInDriveGB = parseFloat((quota.usageInDrive / (1024 ** 3)).toFixed(2));
@@ -143,7 +177,12 @@ router.get('/quota', async (req, res) => {
 
 // GET /api/gdrive/files — list photos & videos from user's Drive
 router.get('/files', async (req, res) => {
-  const client = getAuthedClient();
+  const accountId = getAccountId(req);
+  if (!accountId) {
+    return res.status(400).json({ error: 'X-Account-Id header is required' });
+  }
+
+  const client = getAuthedClient(accountId);
   if (!client) {
     return res.status(401).json({ error: 'Google Drive not connected' });
   }
@@ -153,8 +192,8 @@ router.get('/files', async (req, res) => {
     const tokenInfo = client.credentials;
     if (tokenInfo.expiry_date && tokenInfo.expiry_date < Date.now()) {
       const { credentials } = await client.refreshAccessToken();
-      saveSetting('gdrive_access_token', credentials.access_token);
-      saveSetting('gdrive_token_expiry', String(credentials.expiry_date || 0));
+      saveAccountToken(accountId, 'gdrive_access_token', credentials.access_token);
+      saveAccountToken(accountId, 'gdrive_token_expiry', String(credentials.expiry_date || 0));
     }
 
     const drive = google.drive({ version: 'v3', auth: client });
@@ -189,9 +228,14 @@ router.get('/files', async (req, res) => {
   }
 });
 
-// DELETE /api/gdrive/disconnect — revoke tokens
+// DELETE /api/gdrive/disconnect — revoke tokens and clear account data
 router.delete('/disconnect', async (req, res) => {
-  const client = getAuthedClient();
+  const accountId = getAccountId(req);
+  if (!accountId) {
+    return res.status(400).json({ error: 'X-Account-Id header is required' });
+  }
+
+  const client = getAuthedClient(accountId);
 
   if (client) {
     try {
@@ -201,10 +245,16 @@ router.delete('/disconnect', async (req, res) => {
     }
   }
 
-  deleteSetting('gdrive_access_token');
-  deleteSetting('gdrive_refresh_token');
-  deleteSetting('gdrive_token_expiry');
-  deleteSetting('gdrive_connected');
+  // Clear tokens on the user's account row
+  saveAccountToken(accountId, 'gdrive_access_token', null);
+  saveAccountToken(accountId, 'gdrive_refresh_token', null);
+  saveAccountToken(accountId, 'gdrive_token_expiry', null);
+  saveAccountToken(accountId, 'gdrive_connected', null);
+  saveAccountToken(accountId, 'gdrive_email', null);
+  saveAccountToken(accountId, 'gdrive_scope', null);
+
+  // Clear cached folder IDs for this user
+  driveStorage.clearCache(accountId);
 
   res.json({ connected: false });
 });
@@ -214,20 +264,6 @@ function ensureTempDir() {
   const tmpDir = path.join(os.tmpdir(), 'cloudvault-imports');
   if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
   return tmpDir;
-}
-
-// Helper: get or create a gdrive account for the connected user
-function getOrCreateGDriveAccount(email, displayName) {
-  let account = queryOne("SELECT * FROM accounts WHERE email = ? AND type = 'gdrive'", [email]);
-  if (!account) {
-    const id = 'acc_' + Date.now();
-    run(
-      'INSERT INTO accounts (id, name, email, type, connected_at) VALUES (?, ?, ?, ?, ?)',
-      [id, displayName || email, email, 'gdrive', new Date().toISOString()]
-    );
-    account = queryOne('SELECT * FROM accounts WHERE id = ?', [id]);
-  }
-  return account;
 }
 
 // Helper: get mime extension mapping
@@ -253,7 +289,12 @@ function getExtFromMime(mimeType) {
 // POST /api/gdrive/import — import Picker-selected files from Google Drive (SSE)
 // Body: { files: [{ id, name, mimeType }] }
 router.post('/import', async (req, res) => {
-  const client = getAuthedClient();
+  const accountId = getAccountId(req);
+  if (!accountId) {
+    return res.status(400).json({ error: 'X-Account-Id header is required' });
+  }
+
+  const client = getAuthedClient(accountId);
   if (!client) {
     return res.status(401).json({ error: 'Google Drive not connected' });
   }
@@ -279,17 +320,19 @@ router.post('/import', async (req, res) => {
     const tokenInfo = client.credentials;
     if (tokenInfo.expiry_date && tokenInfo.expiry_date < Date.now()) {
       const { credentials } = await client.refreshAccessToken();
-      saveSetting('gdrive_access_token', credentials.access_token);
-      saveSetting('gdrive_token_expiry', String(credentials.expiry_date || 0));
+      saveAccountToken(accountId, 'gdrive_access_token', credentials.access_token);
+      saveAccountToken(accountId, 'gdrive_token_expiry', String(credentials.expiry_date || 0));
     }
 
     const drive = google.drive({ version: 'v3', auth: client });
 
-    // Get user info for account linking
-    const about = await drive.about.get({ fields: 'user' });
-    const userEmail = about.data.user.emailAddress;
-    const userName = about.data.user.displayName;
-    const account = getOrCreateGDriveAccount(userEmail, userName);
+    // Get the account from the DB using the accountId from the header
+    const account = queryOne('SELECT * FROM accounts WHERE id = ?', [accountId]);
+    if (!account) {
+      sendSSE('error', { message: 'Account not found' });
+      res.end();
+      return;
+    }
 
     // Filter out already-imported files (by source_id = Drive file ID)
     const newFiles = files.filter(f => {
@@ -365,8 +408,8 @@ router.post('/import', async (req, res) => {
           meta = await extractMetadata(tempPath);
         }
 
-        // Upload original to CloudVault folder in Drive
-        const driveFileId = await driveStorage.uploadFile(tempPath, file.name, file.mimeType, false);
+        // Upload original to CloudVault folder in Drive (accountId as first param)
+        const driveFileId = await driveStorage.uploadFile(accountId, tempPath, file.name, file.mimeType, false);
 
         // Generate + upload thumbnail for images
         let hasThumbnail = 0;
@@ -375,7 +418,7 @@ router.post('/import', async (req, res) => {
           const thumbPath = path.join(tmpDir, fileId + '_thumb.jpg');
           hasThumbnail = (await generateThumbnail(tempPath, thumbPath)) ? 1 : 0;
           if (hasThumbnail) {
-            driveThumbId = await driveStorage.uploadFile(thumbPath, fileId + '.jpg', 'image/jpeg', true);
+            driveThumbId = await driveStorage.uploadFile(accountId, thumbPath, fileId + '.jpg', 'image/jpeg', true);
             try { fs.unlinkSync(thumbPath); } catch (e) { /* ignore */ }
           }
         }

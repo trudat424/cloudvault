@@ -2539,6 +2539,209 @@ img { display: block; max-width: 100%; }
 }
 
 /* ═══════════════════════════════════════════
+   ADMIN USER MANAGEMENT
+   ═══════════════════════════════════════════ */
+.admin-users-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.admin-user-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 18px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color 0.2s;
+}
+
+.admin-user-row:hover {
+  border-color: var(--border-light);
+}
+
+.admin-user-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-user-info strong {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.admin-user-username {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.admin-user-drive {
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.admin-user-drive.connected {
+  color: var(--green);
+}
+
+.admin-user-drive.disconnected {
+  color: var(--red);
+}
+
+.admin-user-media {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.admin-role-select {
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  font-weight: 500;
+  font-family: var(--font-body);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.2s;
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 28px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%239990aa' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+
+.admin-role-select:hover {
+  border-color: var(--accent);
+}
+
+.admin-role-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+/* Access Grants */
+.access-grant-form {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.access-grant-form span {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.access-grant-form select {
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-family: var(--font-body);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 160px;
+}
+
+.access-grant-form select:hover {
+  border-color: var(--accent);
+}
+
+.access-grant-form select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.access-grant-form .btn {
+  padding: 8px 20px;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: var(--font-body);
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s;
+}
+
+.access-grant-form .btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.access-grant-form .btn-primary:hover {
+  background: var(--accent-hover);
+  box-shadow: var(--shadow-glow);
+}
+
+.admin-access-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.admin-access-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  transition: border-color 0.2s;
+}
+
+.admin-access-row:hover {
+  border-color: var(--border-light);
+}
+
+.admin-access-row .access-desc {
+  color: var(--text-secondary);
+  flex: 1;
+}
+
+.admin-access-row .access-desc strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.admin-access-row .revoke-btn {
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: rgba(248,113,113,0.08);
+  color: var(--red);
+  border: 1px solid rgba(248,113,113,0.2);
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.admin-access-row .revoke-btn:hover {
+  background: rgba(248,113,113,0.15);
+  border-color: var(--red);
+}
+
+/* ═══════════════════════════════════════════
    UPLOAD ZONE
    ═══════════════════════════════════════════ */
 .upload-zone {

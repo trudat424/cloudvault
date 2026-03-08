@@ -6,29 +6,34 @@
 // API HELPER
 // ────────────────────────────
 const API = {
+  _getHeaders(extra = {}) {
+    const headers = { ...extra };
+    if (state.currentUser) headers['X-Account-Id'] = state.currentUser.id;
+    return headers;
+  },
   async get(path) {
-    const res = await fetch(`/api${path}`);
+    const res = await fetch(`/api${path}`, { headers: this._getHeaders() });
     if (!res.ok) throw new Error(await res.text());
     return res.json();
   },
   async post(path, body) {
     const res = await fetch(`/api${path}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this._getHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error(await res.text());
     return res.json();
   },
   async postForm(path, formData) {
-    const res = await fetch(`/api${path}`, { method: 'POST', body: formData });
+    const res = await fetch(`/api${path}`, { method: 'POST', headers: this._getHeaders(), body: formData });
     if (!res.ok) throw new Error(await res.text());
     return res.json();
   },
   async del(path, body) {
     const res = await fetch(`/api${path}`, {
       method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this._getHeaders({ 'Content-Type': 'application/json' }),
       body: body ? JSON.stringify(body) : undefined,
     });
     if (!res.ok) throw new Error(await res.text());
@@ -58,10 +63,7 @@ const state = {
 };
 
 function getVisibleMedia() {
-  if (state.adminLoggedIn) return state.media;
-  if (!state.currentUser) return [];
-  // Show user's own media + media shared with them
-  return state.media.filter((m) => m.personId === state.currentUser.id);
+  return state.media;
 }
 
 // ────────────────────────────
@@ -238,6 +240,13 @@ function showApp() {
     $('#sidebarUserName').textContent = state.currentUser.name;
   }
 
+  // Role-based UI
+  const role = state.currentUser.role || 'viewer';
+  const fabContainer = document.getElementById('fabContainer');
+  if (fabContainer) {
+    fabContainer.style.display = role === 'viewer' ? 'none' : '';
+  }
+
   loadAppData();
 }
 
@@ -250,7 +259,7 @@ async function loadAppData() {
     state.gdriveConnected = gdrive.connected;
     if (gdrive.connected && gdrive.needsReauth) {
       // Scope changed — silently re-authorize
-      window.location.href = '/api/gdrive/auth';
+      window.location.href = '/api/gdrive/auth?accountId=' + state.currentUser.id;
       return;
     }
     if (gdrive.connected) {
@@ -332,15 +341,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('#sidebarLogout').addEventListener('click', logout);
 });
 
-async function refreshMedia(fetchAll = false) {
+async function refreshMedia() {
   try {
-    if (fetchAll || state.adminLoggedIn) {
-      state.media = await API.get('/media');
-    } else if (state.currentUser) {
-      state.media = await API.get(`/media?account_id=${state.currentUser.id}`);
-    } else {
-      state.media = [];
-    }
+    state.media = await API.get('/media');
   } catch (err) {
     console.error('Failed to load media:', err);
   }
@@ -380,7 +383,11 @@ function switchView(view) {
   if (view === 'dashboard') renderAllMedia();
   if (view === 'sharing') renderSharingView();
   if (view === 'downloads') renderTransferHistory();
-  if (view === 'admin' && state.adminLoggedIn) renderAdminPanel();
+  if (view === 'admin' && state.adminLoggedIn) {
+    renderAdminPanel();
+    loadAdminUsers();
+    loadAdminAccess();
+  }
 
   // Close sidebar on mobile
   $('#sidebar').classList.remove('open');
@@ -428,7 +435,7 @@ function initModals() {
     if (state.gdriveConnected) {
       openDriveBrowser();
     } else {
-      window.location.href = '/api/gdrive/auth';
+      window.location.href = '/api/gdrive/auth?accountId=' + state.currentUser.id;
     }
   });
 }
@@ -472,7 +479,7 @@ function initFabUpload() {
     closeFab();
     if (!state.gdriveConnected) {
       showToast('Connect Google Drive first to upload files', 'info');
-      window.location.href = '/api/gdrive/auth';
+      window.location.href = '/api/gdrive/auth?accountId=' + state.currentUser.id;
       return;
     }
     fileInput.click();
@@ -568,7 +575,7 @@ let driveSearchTimeout = null;
 
 async function openDriveBrowser() {
   if (!state.gdriveConnected) {
-    window.location.href = '/api/gdrive/auth';
+    window.location.href = '/api/gdrive/auth?accountId=' + state.currentUser.id;
     return;
   }
 
@@ -711,7 +718,10 @@ async function importDriveFiles(selectedFiles) {
   try {
     const response = await fetch('/api/gdrive/import', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Account-Id': state.currentUser.id,
+      },
       body: JSON.stringify({ files: selectedFiles }),
     });
 
@@ -1628,9 +1638,11 @@ async function handleAdminLogin() {
       input.value = '';
       $('#adminLogin').style.display = 'none';
       $('#adminPanel').style.display = '';
-      await refreshMedia(true);
+      await refreshMedia();
       await refreshAccounts();
       renderAdminPanel();
+      loadAdminUsers();
+      loadAdminAccess();
       updateDashboard();
       showToast('Admin access granted', 'success');
     }
@@ -1766,6 +1778,107 @@ async function disconnectAllAccounts() {
     showToast('All accounts disconnected', 'success');
   } catch (err) {
     showToast('Failed to disconnect accounts: ' + err.message, 'error');
+  }
+}
+
+// ────────────────────────────
+// ADMIN USER MANAGEMENT
+// ────────────────────────────
+async function loadAdminUsers() {
+  try {
+    const users = await API.get('/admin/users');
+    renderAdminUsers(users);
+  } catch (err) {
+    console.error('Failed to load users:', err);
+  }
+}
+
+function renderAdminUsers(users) {
+  const container = document.getElementById('adminUsersList');
+  if (!container) return;
+
+  container.innerHTML = users.map(u => `
+    <div class="admin-user-row" data-user-id="${u.id}">
+      <div class="admin-user-info">
+        <strong>${u.name}</strong> <span class="admin-user-username">@${u.username}</span>
+        <span class="admin-user-drive">${u.gdriveConnected ? '✓ Drive: ' + u.gdriveEmail : '✗ No Drive'}</span>
+        <span class="admin-user-media">${u.mediaCount} files · ${u.totalGB} GB</span>
+      </div>
+      <select class="admin-role-select" data-user-id="${u.id}" onchange="changeUserRole('${u.id}', this.value)">
+        <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
+        <option value="member" ${u.role === 'member' ? 'selected' : ''}>Member</option>
+        <option value="viewer" ${u.role === 'viewer' ? 'selected' : ''}>Viewer</option>
+      </select>
+    </div>
+  `).join('');
+}
+
+async function changeUserRole(userId, newRole) {
+  try {
+    const res = await fetch(`/api/admin/users/${userId}/role`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Account-Id': state.currentUser ? state.currentUser.id : '' },
+      body: JSON.stringify({ role: newRole }),
+    });
+    if (!res.ok) throw new Error('Failed to update role');
+    showToast(`Role updated to ${newRole}`, 'success');
+  } catch (err) {
+    showToast('Failed to update role', 'error');
+  }
+}
+
+async function loadAdminAccess() {
+  try {
+    const grants = await API.get('/admin/access');
+    renderAdminAccess(grants);
+  } catch (err) {
+    console.error('Failed to load access grants:', err);
+  }
+}
+
+function renderAdminAccess(grants) {
+  const container = document.getElementById('adminAccessList');
+  if (!container) return;
+
+  container.innerHTML = grants.length === 0
+    ? '<p class="empty-state-text">No access grants yet. Grant users access to view other users\' content.</p>'
+    : grants.map(g => `
+      <div class="admin-access-row">
+        <span><strong>${g.viewerName}</strong> (@${g.viewerUsername}) can view <strong>${g.ownerName}</strong>'s content</span>
+        <button class="btn-icon" onclick="revokeAccess('${g.id}')" title="Revoke">✕</button>
+      </div>
+    `).join('');
+}
+
+async function grantAccess() {
+  const viewerSelect = document.getElementById('accessViewerSelect');
+  const ownerSelect = document.getElementById('accessOwnerSelect');
+  if (!viewerSelect || !ownerSelect) return;
+
+  const viewerId = viewerSelect.value;
+  const ownerId = ownerSelect.value;
+
+  if (!viewerId || !ownerId) {
+    showToast('Select both users', 'error');
+    return;
+  }
+
+  try {
+    await API.post('/admin/access', { viewerId, ownerId });
+    showToast('Access granted', 'success');
+    loadAdminAccess();
+  } catch (err) {
+    showToast('Failed to grant access', 'error');
+  }
+}
+
+async function revokeAccess(grantId) {
+  try {
+    await API.del(`/admin/access/${grantId}`);
+    showToast('Access revoked', 'success');
+    loadAdminAccess();
+  } catch (err) {
+    showToast('Failed to revoke access', 'error');
   }
 }
 
