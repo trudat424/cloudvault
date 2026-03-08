@@ -60,23 +60,18 @@ router.get('/link/view/:token', (req, res) => {
     [link.account_id]
   );
 
-  const path = require('path');
   res.json({
     ownerName: account.name,
-    media: media.map(row => {
-      const id = row.id;
-      const thumbName = id + '.jpg';
-      return {
-        id,
-        type: row.type,
-        name: row.original_name,
-        sizeMB: parseFloat((row.size_bytes / (1024 * 1024)).toFixed(1)),
-        date: row.date_taken || row.uploaded_at,
-        has_thumbnail: row.has_thumbnail,
-        thumbnail: row.has_thumbnail ? `/uploads/thumbnails/${thumbName}` : null,
-        original: `/uploads/originals/${row.stored_name}`,
-      };
-    }),
+    media: media.map(row => ({
+      id: row.id,
+      type: row.type,
+      name: row.original_name,
+      sizeMB: parseFloat((row.size_bytes / (1024 * 1024)).toFixed(1)),
+      date: row.date_taken || row.uploaded_at,
+      has_thumbnail: row.has_thumbnail,
+      thumbnail: row.drive_thumb_id ? `/api/media/thumb/${row.id}` : null,
+      original: row.drive_file_id ? `/api/media/file/${row.id}` : null,
+    })),
   });
 });
 
@@ -208,21 +203,16 @@ router.get('/shared-media/:ownerId', (req, res) => {
     [req.params.ownerId]
   );
 
-  const path = require('path');
-  res.json(media.map(row => {
-    const id = row.id;
-    const thumbName = id + '.jpg';
-    return {
-      id,
-      type: row.type,
-      name: row.original_name,
-      sizeMB: parseFloat((row.size_bytes / (1024 * 1024)).toFixed(1)),
-      date: row.date_taken || row.uploaded_at,
-      has_thumbnail: row.has_thumbnail,
-      thumbnail: row.has_thumbnail ? `/uploads/thumbnails/${thumbName}` : null,
-      original: `/uploads/originals/${row.stored_name}`,
-    };
-  }));
+  res.json(media.map(row => ({
+    id: row.id,
+    type: row.type,
+    name: row.original_name,
+    sizeMB: parseFloat((row.size_bytes / (1024 * 1024)).toFixed(1)),
+    date: row.date_taken || row.uploaded_at,
+    has_thumbnail: row.has_thumbnail,
+    thumbnail: row.drive_thumb_id ? `/api/media/thumb/${row.id}` : null,
+    original: row.drive_file_id ? `/api/media/file/${row.id}` : null,
+  })));
 });
 
 module.exports = router;

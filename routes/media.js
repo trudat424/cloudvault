@@ -327,7 +327,6 @@ function mapMediaRow(row) {
     personId: row.account_id,
     personName: row.person_name,
     personEmail: row.person_email,
-    icloudName: row.person_email,
     type: row.type,
     name: row.original_name,
     sizeMB: parseFloat((row.size_bytes / (1024 * 1024)).toFixed(1)),

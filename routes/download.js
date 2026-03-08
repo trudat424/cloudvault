@@ -1,26 +1,29 @@
 const express = require('express');
 const router = express.Router();
-const path = require('path');
-const fs = require('fs');
 const archiver = require('archiver');
 const { queryOne, queryAll } = require('../db/database');
-const { DATA_DIR } = require('../config');
+const s3Storage = require('../services/s3Storage');
 
-// GET /api/download/:id - single file download
-router.get('/:id', (req, res) => {
+// GET /api/download/:id - single file download (streamed from S3)
+router.get('/:id', async (req, res) => {
   const row = queryOne('SELECT * FROM media WHERE id = ?', [req.params.id]);
   if (!row) return res.status(404).json({ error: 'Not found' });
+  if (!row.drive_file_id) return res.status(404).json({ error: 'File not in cloud storage' });
 
-  const filePath = path.join(DATA_DIR, 'uploads', 'originals', row.stored_name);
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ error: 'File not found on disk' });
+  try {
+    const { stream, mimeType, size } = await s3Storage.getFileStream(row.drive_file_id);
+    res.set('Content-Type', mimeType || row.mime_type);
+    if (size) res.set('Content-Length', String(size));
+    res.set('Content-Disposition', `attachment; filename="${encodeURIComponent(row.original_name)}"`);
+    stream.pipe(res);
+  } catch (err) {
+    console.error('Download stream error:', err.message);
+    res.status(500).json({ error: 'Failed to download file' });
   }
-
-  res.download(filePath, row.original_name);
 });
 
-// POST /api/download/zip - download multiple as ZIP
-router.post('/zip', (req, res) => {
+// POST /api/download/zip - download multiple as ZIP (streamed from S3)
+router.post('/zip', async (req, res) => {
   const { ids } = req.body;
   if (!ids || !Array.isArray(ids) || ids.length === 0) {
     return res.status(400).json({ error: 'ids array required' });
@@ -40,19 +43,21 @@ router.post('/zip', (req, res) => {
   archive.pipe(res);
 
   for (const row of rows) {
-    const filePath = path.join(DATA_DIR, 'uploads', 'originals', row.stored_name);
-    if (fs.existsSync(filePath)) {
-      // Organize by person name in the ZIP
-      const folder = row.person_name.replace(/[^a-zA-Z0-9 ]/g, '');
-      archive.file(filePath, { name: `${folder}/${row.original_name}` });
+    if (!row.drive_file_id) continue;
+    try {
+      const { stream } = await s3Storage.getFileStream(row.drive_file_id);
+      const folder = (row.person_name || 'Unknown').replace(/[^a-zA-Z0-9 ]/g, '');
+      archive.append(stream, { name: `${folder}/${row.original_name}` });
+    } catch (err) {
+      console.error(`ZIP: failed to fetch ${row.original_name}:`, err.message);
     }
   }
 
   archive.finalize();
 });
 
-// POST /api/download/zip-all - download all as ZIP
-router.post('/zip-all', (req, res) => {
+// POST /api/download/zip-all - download all as ZIP (streamed from S3)
+router.post('/zip-all', async (req, res) => {
   const { account_id } = req.body || {};
   let rows;
   if (account_id) {
@@ -72,10 +77,13 @@ router.post('/zip-all', (req, res) => {
   archive.pipe(res);
 
   for (const row of rows) {
-    const filePath = path.join(DATA_DIR, 'uploads', 'originals', row.stored_name);
-    if (fs.existsSync(filePath)) {
-      const folder = row.person_name.replace(/[^a-zA-Z0-9 ]/g, '');
-      archive.file(filePath, { name: `${folder}/${row.original_name}` });
+    if (!row.drive_file_id) continue;
+    try {
+      const { stream } = await s3Storage.getFileStream(row.drive_file_id);
+      const folder = (row.person_name || 'Unknown').replace(/[^a-zA-Z0-9 ]/g, '');
+      archive.append(stream, { name: `${folder}/${row.original_name}` });
+    } catch (err) {
+      console.error(`ZIP-all: failed to fetch ${row.original_name}:`, err.message);
     }
   }
 
