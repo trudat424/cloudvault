@@ -98,6 +98,19 @@ async function initDatabase() {
     }
   }
 
+  // Migration: add folder_id to media for folder organization
+  try { database.run("ALTER TABLE media ADD COLUMN folder_id TEXT DEFAULT NULL"); } catch(e) { /* exists */ }
+  try { database.run("CREATE INDEX IF NOT EXISTS idx_media_folder ON media(folder_id)"); } catch(e) { /* exists */ }
+
+  // Migration: add AI analysis columns to media
+  try { database.run("ALTER TABLE media ADD COLUMN ai_description TEXT DEFAULT NULL"); } catch(e) { /* exists */ }
+  try { database.run("ALTER TABLE media ADD COLUMN ai_tags TEXT DEFAULT NULL"); } catch(e) { /* exists */ }
+  try { database.run("ALTER TABLE media ADD COLUMN ai_status TEXT DEFAULT 'pending'"); } catch(e) { /* exists */ }
+
+  // Migration: add source tracking columns to media
+  try { database.run("ALTER TABLE media ADD COLUMN source_platform TEXT DEFAULT NULL"); } catch(e) { /* exists */ }
+  try { database.run("ALTER TABLE media ADD COLUMN source_category TEXT DEFAULT NULL"); } catch(e) { /* exists */ }
+
   // Seed admin password if not set
   const result = database.exec("SELECT value FROM settings WHERE key = 'admin_password'");
   if (result.length === 0) {

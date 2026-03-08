@@ -21,6 +21,8 @@ app.use('/api/download', require('./routes/download'));
 app.use('/api/gdrive', require('./routes/gdrive'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/share', require('./routes/share'));
+app.use('/api/folders', require('./routes/folders'));
+app.use('/api/social', require('./routes/social'));
 
 // SPA Fallback
 app.get('*', (req, res) => {

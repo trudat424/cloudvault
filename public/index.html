@@ -111,6 +111,10 @@
         <svg viewBox="0 0 20 20" fill="currentColor"><path d="M15 8a3 3 0 10-2.977-2.63l-4.94 2.47a3 3 0 100 4.319l4.94 2.47a3 3 0 10.895-1.789l-4.94-2.47a3.027 3.027 0 000-.74l4.94-2.47C13.456 7.68 14.19 8 15 8z"/></svg>
         <span>Sharing</span>
       </a>
+      <a href="#" class="nav-item" data-view="connections">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5zM5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z"/></svg>
+        <span>Connections</span>
+      </a>
       <a href="#" class="nav-item" data-view="downloads">
         <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
         <span>Downloads</span>
@@ -233,40 +237,63 @@
         </div>
       </div>
 
-      <!-- MEDIA FILTERS + GRID (shown when media exists) -->
+      <!-- FILE BROWSER (shown when media exists) -->
       <div class="dashboard-media" id="dashboardMedia" style="display:none;">
-        <div class="filter-bar" id="filterBar">
-          <div class="filter-group">
-            <label>Type</label>
-            <select id="filterType">
-              <option value="all">All Types</option>
-              <option value="photo">Photos</option>
-              <option value="video">Videos</option>
-            </select>
+        <!-- Breadcrumb bar -->
+        <nav class="breadcrumb-bar" id="breadcrumbBar">
+          <a href="#" class="breadcrumb-item breadcrumb-root active" data-folder-id="">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/></svg>
+            <span>My Files</span>
+          </a>
+        </nav>
+
+        <!-- Action bar -->
+        <div class="file-browser-actions" id="fileBrowserActions">
+          <div class="file-actions-left">
+            <button class="action-btn new-folder-btn" id="newFolderBtn">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V8a2 2 0 00-2-2h-5L9 4H4z" clip-rule="evenodd"/></svg>
+              <span>New Folder</span>
+            </button>
           </div>
-          <div class="filter-group">
-            <label>Date</label>
-            <select id="filterDate">
-              <option value="all">All Time</option>
-              <option value="today">Today</option>
-              <option value="week">This Week</option>
-              <option value="month">This Month</option>
-              <option value="year">This Year</option>
-            </select>
-          </div>
-          <div class="filter-group">
-            <label>Sort</label>
-            <select id="filterSort">
-              <option value="newest">Newest First</option>
-              <option value="oldest">Oldest First</option>
-              <option value="largest">Largest First</option>
-              <option value="smallest">Smallest First</option>
-              <option value="name">By Name</option>
-            </select>
+          <div class="file-actions-right">
+            <div class="filter-group compact">
+              <select id="filterType">
+                <option value="all">All Types</option>
+                <option value="photo">Photos</option>
+                <option value="video">Videos</option>
+              </select>
+            </div>
+            <div class="filter-group compact">
+              <select id="filterSort">
+                <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
+                <option value="largest">Largest</option>
+                <option value="smallest">Smallest</option>
+                <option value="name">Name</option>
+              </select>
+            </div>
           </div>
         </div>
 
-        <div class="media-grid" id="allMediaGrid"></div>
+        <!-- File browser content -->
+        <div class="file-browser" id="fileBrowser">
+          <div class="folders-section" id="foldersSection" style="display:none;">
+            <div class="section-label">Folders</div>
+            <div class="folders-grid" id="foldersGrid"></div>
+          </div>
+          <div class="files-section" id="filesSection">
+            <div class="section-label" id="filesLabel" style="display:none;">Files</div>
+            <div class="media-grid" id="allMediaGrid"></div>
+          </div>
+          <div class="empty-folder-state" id="emptyFolderState" style="display:none;">
+            <svg viewBox="0 0 64 64" fill="none" width="64" height="64">
+              <path d="M8 16a4 4 0 014-4h16l4 4h20a4 4 0 014 4v28a4 4 0 01-4 4H12a4 4 0 01-4-4V16z" stroke="var(--text-muted)" stroke-width="2" fill="none"/>
+            </svg>
+            <h3>This folder is empty</h3>
+            <p>Upload files or create subfolders to get started.</p>
+            <button class="cta-btn" id="emptyFolderUploadBtn">Upload Files</button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -306,6 +333,17 @@
           <p class="share-desc">Media others have shared with you.</p>
         </div>
         <div id="sharedWithMeList" class="shared-with-me-list"></div>
+      </div>
+    </section>
+
+    <!-- ═══ VIEW: CONNECTIONS ═══ -->
+    <section class="view" id="viewConnections">
+      <div class="view-header">
+        <h1 class="view-title">Connections</h1>
+        <p class="view-subtitle">Connect your accounts to import content</p>
+      </div>
+      <div class="connections-grid" id="connectionsGrid">
+        <!-- Populated dynamically -->
       </div>
     </section>
 
@@ -526,6 +564,10 @@
     <a href="#" class="mobile-nav-item" data-view="sharing">
       <svg viewBox="0 0 20 20" fill="currentColor"><path d="M15 8a3 3 0 10-2.977-2.63l-4.94 2.47a3 3 0 100 4.319l4.94 2.47a3 3 0 10.895-1.789l-4.94-2.47a3.027 3.027 0 000-.74l4.94-2.47C13.456 7.68 14.19 8 15 8z"/></svg>
       <span>Share</span>
+    </a>
+    <a href="#" class="mobile-nav-item" data-view="connections">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5zM5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z"/></svg>
+      <span>Connect</span>
     </a>
     <a href="#" class="mobile-nav-item" data-view="downloads">
       <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>

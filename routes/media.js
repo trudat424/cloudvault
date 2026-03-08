@@ -171,6 +171,15 @@ router.get('/', (req, res) => {
     params.push(requestAccountId, requestAccountId);
   }
 
+  // Folder filter
+  const folder_id = req.query.folder_id;
+  if (folder_id) {
+    sql += ' AND folder_id = ?';
+    params.push(folder_id);
+  } else if (req.query.root === 'true') {
+    sql += ' AND folder_id IS NULL';
+  }
+
   if (type && type !== 'all') {
     sql += ' AND type = ?';
     params.push(type);
@@ -180,9 +189,9 @@ router.get('/', (req, res) => {
     params.push(account_id);
   }
   if (search) {
-    sql += ' AND (original_name LIKE ? OR person_name LIKE ? OR location LIKE ? OR category LIKE ?)';
+    sql += ' AND (original_name LIKE ? OR person_name LIKE ? OR location LIKE ? OR category LIKE ? OR ai_description LIKE ? OR ai_tags LIKE ?)';
     const s = `%${search}%`;
-    params.push(s, s, s, s);
+    params.push(s, s, s, s, s, s);
   }
   if (date && date !== 'all') {
     const days = { today: 1, week: 7, month: 30, year: 365 };
@@ -214,7 +223,7 @@ router.get('/:id', (req, res) => {
 
 // POST /api/media/upload - upload files to S3 (role enforcement)
 router.post('/upload', upload.array('files', 20), async (req, res) => {
-  const { account_id } = req.body;
+  const { account_id, folder_id } = req.body;
   if (!account_id) return res.status(400).json({ error: 'account_id required' });
 
   // Role enforcement: viewers cannot upload
@@ -274,8 +283,8 @@ router.post('/upload', upload.array('files', 20), async (req, res) => {
           original_name, stored_name, mime_type, size_bytes,
           width, height, date_taken, latitude, longitude,
           camera_make, camera_model, has_thumbnail,
-          drive_file_id, drive_thumb_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          drive_file_id, drive_thumb_id, folder_id, source_platform)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id, account_id, account.name, account.email, type,
           file.originalname, file.filename, file.mimetype, file.size,
@@ -285,8 +294,15 @@ router.post('/upload', upload.array('files', 20), async (req, res) => {
           meta.cameraMake || null, meta.cameraModel || null,
           hasThumbnail,
           s3FileKey, s3ThumbKey,
+          folder_id || null, 'upload',
         ]
       );
+
+      // Trigger AI analysis if configured
+      try {
+        const aiAnalysis = require('../services/aiAnalysis');
+        if (aiAnalysis.isConfigured()) aiAnalysis.enqueue(id);
+      } catch (_) {}
 
       const row = queryOne('SELECT * FROM media WHERE id = ?', [id]);
       results.push(mapMediaRow(row));
@@ -348,6 +364,12 @@ function mapMediaRow(row) {
     has_thumbnail: row.has_thumbnail,
     thumbnail: row.drive_thumb_id ? `/api/media/thumb/${id}` : null,
     original: row.drive_file_id ? `/api/media/file/${id}` : null,
+    folderId: row.folder_id || null,
+    aiDescription: row.ai_description || null,
+    aiTags: row.ai_tags ? JSON.parse(row.ai_tags) : [],
+    aiStatus: row.ai_status || 'pending',
+    sourcePlatform: row.source_platform || null,
+    sourceCategory: row.source_category || null,
   };
 }
 

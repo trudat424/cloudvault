@@ -30,6 +30,15 @@ const API = {
     if (!res.ok) throw new Error(await res.text());
     return res.json();
   },
+  async put(path, body) {
+    const res = await fetch(`/api${path}`, {
+      method: 'PUT',
+      headers: this._getHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
   async del(path, body) {
     const res = await fetch(`/api${path}`, {
       method: 'DELETE',
@@ -58,6 +67,10 @@ const state = {
   lightboxItems: [],
   transferHistory: [],
   adminLoggedIn: false,
+  // Folder browser state
+  currentFolderId: null, // null = root
+  folderPath: [],        // breadcrumb: [{ id, name }, ...]
+  folders: [],           // current level's folders
 };
 
 function getVisibleMedia() {
@@ -256,7 +269,6 @@ async function loadAppData() {
     const gdrive = await API.get('/gdrive/status');
     state.gdriveConnected = gdrive.connected;
     if (gdrive.connected && gdrive.needsReauth) {
-      // Scope changed — prompt user instead of silently redirecting (avoids redirect loop)
       showToast('Google Drive permissions need updating. Please reconnect.', 'warning');
     }
     if (gdrive.connected) {
@@ -265,16 +277,10 @@ async function loadAppData() {
       state.gdriveAccessToken = gdrive.accessToken || '';
     }
 
-    // Onboarding: show upload-first welcome if no media exists
-    const hasMedia = getVisibleMedia().length > 0;
-    if (hasMedia) {
-      $('#onboarding').style.display = 'none';
-      $('#dashboardMedia').style.display = '';
-      renderAllMedia();
-    } else {
-      $('#onboarding').style.display = '';
-      $('#dashboardMedia').style.display = 'none';
-    }
+    // Always show the file browser and load folders
+    // navigateToFolder handles showing/hiding onboarding based on folder+media presence
+    $('#dashboardMedia').style.display = '';
+    await navigateToFolder(null);
   } catch (err) {
     console.error('Failed to load data:', err);
   }
@@ -320,6 +326,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initSidebarToggle();
   initAdmin();
   initOnboarding();
+  initFileBrowser();
 
   // Check for Google Drive OAuth callback
   const gdriveParam = urlParams.get('gdrive');
@@ -376,8 +383,9 @@ function switchView(view) {
   $$('.view').forEach((v) => v.classList.remove('active'));
   $(`#view${capitalize(view)}`).classList.add('active');
 
-  if (view === 'dashboard') renderAllMedia();
+  if (view === 'dashboard') navigateToFolder(state.currentFolderId);
   if (view === 'sharing') renderSharingView();
+  if (view === 'connections') renderConnectionsView();
   if (view === 'admin' && state.adminLoggedIn) {
     renderAdminPanel();
     loadAdminUsers();
@@ -516,6 +524,7 @@ async function startUpload(accountId, files) {
     const batch = files.slice(i, i + BATCH_SIZE);
     const formData = new FormData();
     formData.append('account_id', accountId);
+    if (state.currentFolderId) formData.append('folder_id', state.currentFolderId);
     batch.forEach((f) => formData.append('files', f));
 
     try {
@@ -542,7 +551,7 @@ async function startUpload(accountId, files) {
     showToast(`Uploaded ${totalUploaded} file${totalUploaded > 1 ? 's' : ''}`, 'success');
     $('#onboarding').style.display = 'none';
     $('#dashboardMedia').style.display = '';
-    renderAllMedia();
+    navigateToFolder(state.currentFolderId);
   }
 }
 
@@ -741,7 +750,7 @@ async function importDriveFiles(selectedFiles) {
                   if (getVisibleMedia().length > 0) {
                     $('#onboarding').style.display = 'none';
                     $('#dashboardMedia').style.display = '';
-                    renderAllMedia();
+                    navigateToFolder(state.currentFolderId);
                   }
                 }
               }, 1200);
@@ -839,10 +848,28 @@ function createMediaCard(item, selectable = false) {
     ? `<img class="thumb" src="${item.thumbnail}" alt="${item.name}" loading="lazy" />`
     : `<div class="thumb video-thumb-placeholder"><svg viewBox="0 0 48 48" fill="none" width="48" height="48"><circle cx="24" cy="24" r="18" stroke="currentColor" stroke-width="2" fill="none" opacity="0.3"/><path d="M20 16l12 8-12 8z" fill="currentColor" opacity="0.4"/></svg></div>`;
 
+  // AI badge
+  const aiBadge = item.aiStatus === 'done'
+    ? '<div class="ai-badge" title="AI analyzed">✨</div>'
+    : item.aiStatus === 'processing'
+    ? '<div class="ai-badge processing" title="Analyzing...">⏳</div>'
+    : '';
+
+  // Platform badge
+  const platformIcons = {
+    instagram: '📸', tiktok: '🎵', twitter: '𝕏', youtube: '▶',
+    drive: '📁', upload: '',
+  };
+  const platformBadge = item.sourcePlatform && item.sourcePlatform !== 'upload'
+    ? `<div class="platform-badge" title="${item.sourcePlatform}">${platformIcons[item.sourcePlatform] || '🔗'}</div>`
+    : '';
+
   return `
     <div class="media-card${selected}" data-id="${item.id}" data-type="${item.type}">
       ${thumbContent}
       ${item.type === 'video' ? `<div class="video-badge"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"/></svg></div>` : ''}
+      ${aiBadge}
+      ${platformBadge}
       <div class="select-check"></div>
       <div class="card-overlay">
         <span class="card-name">${item.name}</span>
@@ -880,43 +907,32 @@ function toggleSelect(id, card) {
 // MEDIA FILTERS
 // ────────────────────────────
 function initFilters() {
-  ['filterType', 'filterDate', 'filterSort'].forEach((id) => {
-    $(`#${id}`).addEventListener('change', renderAllMedia);
+  ['filterType', 'filterSort'].forEach((id) => {
+    const el = $(`#${id}`);
+    if (el) el.addEventListener('change', () => navigateToFolder(state.currentFolderId));
   });
 }
 
-function getFilteredMedia() {
-  let items = [...getVisibleMedia()];
-  const type = $('#filterType').value;
-  const date = $('#filterDate').value;
-  const sort = $('#filterSort').value;
+function getFilteredMedia(items) {
+  let filtered = items ? [...items] : [...getVisibleMedia()];
+  const typeEl = $('#filterType');
+  const sortEl = $('#filterSort');
+  const type = typeEl ? typeEl.value : 'all';
+  const sort = sortEl ? sortEl.value : 'newest';
 
-  if (type !== 'all') items = items.filter((m) => m.type === type);
-  if (date !== 'all') {
-    const now = Date.now();
-    const day = 86400000;
-    const cutoffs = { today: day, week: day * 7, month: day * 30, year: day * 365 };
-    items = items.filter((m) => now - m.timestamp < cutoffs[date]);
-  }
+  if (type !== 'all') filtered = filtered.filter((m) => m.type === type);
   switch (sort) {
-    case 'newest': items.sort((a, b) => b.timestamp - a.timestamp); break;
-    case 'oldest': items.sort((a, b) => a.timestamp - b.timestamp); break;
-    case 'largest': items.sort((a, b) => b.sizeMB - a.sizeMB); break;
-    case 'smallest': items.sort((a, b) => a.sizeMB - b.sizeMB); break;
-    case 'name': items.sort((a, b) => a.name.localeCompare(b.name)); break;
+    case 'newest': filtered.sort((a, b) => b.timestamp - a.timestamp); break;
+    case 'oldest': filtered.sort((a, b) => a.timestamp - b.timestamp); break;
+    case 'largest': filtered.sort((a, b) => b.sizeMB - a.sizeMB); break;
+    case 'smallest': filtered.sort((a, b) => a.sizeMB - b.sizeMB); break;
+    case 'name': filtered.sort((a, b) => a.name.localeCompare(b.name)); break;
   }
-  return items;
+  return filtered;
 }
 
 function renderAllMedia() {
-  const grid = $('#allMediaGrid');
-  if (getVisibleMedia().length === 0) {
-    grid.innerHTML = '';
-    return;
-  }
-  const items = getFilteredMedia();
-  grid.innerHTML = items.map((item) => createMediaCard(item)).join('');
-  attachMediaCardEvents(grid);
+  navigateToFolder(state.currentFolderId);
 }
 
 // ────────────────────────────
@@ -1266,10 +1282,22 @@ function renderLightboxContent() {
   const metaParts = [dateStr, `${item.sizeMB} MB`];
   if (item.resolution) metaParts.push(item.resolution);
 
+  // AI description and tags
+  let aiHtml = '';
+  if (item.aiDescription) {
+    aiHtml += `<div class="lb-ai-description"><span class="lb-ai-label">✨ AI Description</span><p>${item.aiDescription}</p></div>`;
+  }
+  if (item.aiTags && item.aiTags.length > 0) {
+    aiHtml += `<div class="lb-ai-tags">${item.aiTags.map(tag =>
+      `<span class="ai-tag" onclick="searchByTag('${tag.replace(/'/g, "\\'")}')">${tag}</span>`
+    ).join('')}</div>`;
+  }
+
   $('#lightboxInfo').innerHTML = `
     <div class="lb-details">
       <h3>${item.name}</h3>
       <p>${metaParts.join(' &middot; ')}</p>
+      ${aiHtml}
     </div>
     <div class="lb-actions">
       <button class="lb-action-btn" onclick="downloadSingle('${item.id}')">
@@ -1290,20 +1318,36 @@ function initSearch() {
     debounceTimer = setTimeout(() => {
       const query = e.target.value.toLowerCase().trim();
       if (!query) {
-        renderAllMedia();
+        navigateToFolder(state.currentFolderId);
         return;
       }
       const results = getVisibleMedia().filter(
         (m) => m.name.toLowerCase().includes(query) ||
           (m.location && m.location.toLowerCase().includes(query)) ||
-          (m.category && m.category.toLowerCase().includes(query))
+          (m.category && m.category.toLowerCase().includes(query)) ||
+          (m.aiDescription && m.aiDescription.toLowerCase().includes(query)) ||
+          (m.aiTags && m.aiTags.some(t => t.toLowerCase().includes(query)))
       );
-      switchView('dashboard');
+      if (state.currentView !== 'dashboard') switchView('dashboard');
+      // Show search results without folder structure
+      const foldersSection = $('#foldersSection');
+      const filesLabel = $('#filesLabel');
+      const emptyState = $('#emptyFolderState');
+      if (foldersSection) foldersSection.style.display = 'none';
+      if (filesLabel) { filesLabel.style.display = ''; filesLabel.textContent = `Search results (${results.length})`; }
+      if (emptyState) emptyState.style.display = 'none';
       const grid = $('#allMediaGrid');
       grid.innerHTML = results.map((item) => createMediaCard(item)).join('');
       attachMediaCardEvents(grid);
     }, 300);
   });
+}
+
+function searchByTag(tag) {
+  closeLightbox();
+  const searchInput = $('#searchInput');
+  searchInput.value = tag;
+  searchInput.dispatchEvent(new Event('input'));
 }
 
 // ────────────────────────────
@@ -1686,4 +1730,602 @@ function confirmAction(title, message, onConfirm) {
     overlay.remove();
     onConfirm();
   });
+}
+
+// ────────────────────────────
+// FOLDER BROWSER
+// ────────────────────────────
+function initFileBrowser() {
+  const newFolderBtn = $('#newFolderBtn');
+  if (newFolderBtn) newFolderBtn.addEventListener('click', promptCreateFolder);
+
+  const emptyUploadBtn = $('#emptyFolderUploadBtn');
+  if (emptyUploadBtn) {
+    emptyUploadBtn.addEventListener('click', () => {
+      if (!state.currentUser) { showToast('Please log in first', 'error'); return; }
+      $('#fabFileInput').click();
+    });
+  }
+}
+
+async function navigateToFolder(folderId) {
+  state.currentFolderId = folderId;
+
+  try {
+    // Fetch folders at this level
+    let folderUrl = `/folders?account_id=${state.currentUser.id}`;
+    if (folderId) folderUrl += `&parent_id=${folderId}`;
+    const folders = await API.get(folderUrl);
+    state.folders = folders;
+
+    // Fetch breadcrumb path
+    if (folderId) {
+      const folderInfo = await API.get(`/folders/${folderId}`);
+      state.folderPath = folderInfo.path || [];
+    } else {
+      state.folderPath = [];
+    }
+
+    // Fetch media at this level
+    let mediaUrl = `/media?`;
+    if (folderId) {
+      mediaUrl += `folder_id=${folderId}`;
+    } else {
+      mediaUrl += `root=true`;
+    }
+    const typeFilter = $('#filterType') ? $('#filterType').value : 'all';
+    const sortFilter = $('#filterSort') ? $('#filterSort').value : 'newest';
+    if (typeFilter !== 'all') mediaUrl += `&type=${typeFilter}`;
+    mediaUrl += `&sort=${sortFilter}`;
+
+    const media = await API.get(mediaUrl);
+
+    renderBreadcrumb();
+    renderFileBrowser(folders, media);
+  } catch (err) {
+    console.error('Failed to navigate to folder:', err);
+    showToast('Failed to load folder', 'error');
+  }
+}
+
+function renderBreadcrumb() {
+  const bar = $('#breadcrumbBar');
+  if (!bar) return;
+
+  let html = `
+    <a href="#" class="breadcrumb-item breadcrumb-root ${state.folderPath.length === 0 ? 'active' : ''}" data-folder-id="">
+      <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/></svg>
+      <span>My Files</span>
+    </a>
+  `;
+
+  state.folderPath.forEach((segment, i) => {
+    const isLast = i === state.folderPath.length - 1;
+    html += `
+      <span class="breadcrumb-sep">/</span>
+      <a href="#" class="breadcrumb-item ${isLast ? 'active' : ''}" data-folder-id="${segment.id}">
+        <span>${segment.name}</span>
+      </a>
+    `;
+  });
+
+  bar.innerHTML = html;
+
+  // Attach click events
+  bar.querySelectorAll('.breadcrumb-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      e.preventDefault();
+      const fId = item.dataset.folderId;
+      navigateToFolder(fId || null);
+    });
+  });
+}
+
+function renderFileBrowser(folders, media) {
+  const foldersSection = $('#foldersSection');
+  const foldersGrid = $('#foldersGrid');
+  const filesSection = $('#filesSection');
+  const filesLabel = $('#filesLabel');
+  const mediaGrid = $('#allMediaGrid');
+  const emptyState = $('#emptyFolderState');
+
+  const hasFolders = folders.length > 0;
+  const hasMedia = media.length > 0;
+
+  // Show onboarding only at root with no content; hide file browser sections when onboarding shows
+  const onboarding = $('#onboarding');
+  const dashboardMedia = $('#dashboardMedia');
+  const showOnboarding = !hasFolders && !hasMedia && !state.currentFolderId;
+  if (onboarding) {
+    onboarding.style.display = showOnboarding ? '' : 'none';
+  }
+  if (dashboardMedia) {
+    dashboardMedia.style.display = showOnboarding ? 'none' : '';
+  }
+  if (showOnboarding) return; // Don't render file browser sections when onboarding is shown
+
+  // Folders
+  if (hasFolders) {
+    foldersSection.style.display = '';
+    foldersGrid.innerHTML = folders.map(f => createFolderCard(f)).join('');
+    attachFolderCardEvents(foldersGrid);
+  } else {
+    foldersSection.style.display = 'none';
+  }
+
+  // Files label - show only when there are also folders
+  if (filesLabel) {
+    filesLabel.style.display = (hasFolders && hasMedia) ? '' : 'none';
+    filesLabel.textContent = 'Files';
+  }
+
+  // Media
+  if (hasMedia) {
+    filesSection.style.display = '';
+    const filteredMedia = getFilteredMedia(media);
+    mediaGrid.innerHTML = filteredMedia.map(item => createMediaCard(item)).join('');
+    attachMediaCardEvents(mediaGrid);
+    emptyState.style.display = 'none';
+  } else if (!hasFolders) {
+    // Show empty state only if there's nothing at all
+    filesSection.style.display = 'none';
+    emptyState.style.display = state.currentFolderId ? '' : 'none';
+  } else {
+    filesSection.style.display = 'none';
+    emptyState.style.display = 'none';
+  }
+}
+
+function createFolderCard(folder) {
+  const itemCount = (folder.subfolderCount || 0) + (folder.mediaCount || 0);
+  return `
+    <div class="folder-card" data-folder-id="${folder.id}">
+      <div class="folder-card-icon">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28"><path d="M4 4a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V8a2 2 0 00-2-2h-8l-2-2H4z"/></svg>
+      </div>
+      <div class="folder-card-info">
+        <span class="folder-card-name">${folder.name}</span>
+        <span class="folder-card-count">${itemCount} item${itemCount !== 1 ? 's' : ''}</span>
+      </div>
+      <button class="folder-card-menu" data-folder-id="${folder.id}" title="Folder options">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"/></svg>
+      </button>
+    </div>
+  `;
+}
+
+function attachFolderCardEvents(container) {
+  container.querySelectorAll('.folder-card').forEach(card => {
+    card.addEventListener('click', (e) => {
+      // Don't navigate if clicking the menu button
+      if (e.target.closest('.folder-card-menu')) return;
+      const folderId = card.dataset.folderId;
+      navigateToFolder(folderId);
+    });
+  });
+
+  container.querySelectorAll('.folder-card-menu').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showFolderContextMenu(btn.dataset.folderId, e);
+    });
+  });
+}
+
+function showFolderContextMenu(folderId, event) {
+  // Remove any existing context menu
+  document.querySelectorAll('.folder-context-menu').forEach(m => m.remove());
+
+  const folder = state.folders.find(f => f.id === folderId);
+  if (!folder) return;
+
+  const menu = document.createElement('div');
+  menu.className = 'folder-context-menu';
+  menu.innerHTML = `
+    <button class="ctx-item" data-action="rename">
+      <svg viewBox="0 0 20 20" fill="currentColor" width="14"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg>
+      Rename
+    </button>
+    <button class="ctx-item danger" data-action="delete">
+      <svg viewBox="0 0 20 20" fill="currentColor" width="14"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+      Delete
+    </button>
+  `;
+
+  // Position near the button
+  const rect = event.target.closest('.folder-card-menu').getBoundingClientRect();
+  menu.style.position = 'fixed';
+  menu.style.top = `${rect.bottom + 4}px`;
+  menu.style.left = `${rect.left - 100}px`;
+  menu.style.zIndex = '1000';
+
+  document.body.appendChild(menu);
+
+  menu.querySelector('[data-action="rename"]').addEventListener('click', () => {
+    menu.remove();
+    promptRenameFolder(folderId, folder.name);
+  });
+
+  menu.querySelector('[data-action="delete"]').addEventListener('click', () => {
+    menu.remove();
+    confirmAction('Delete Folder', `Delete "${folder.name}"? Contents will be moved to the parent folder.`, async () => {
+      try {
+        await API.del(`/folders/${folderId}?action=move_to_parent`);
+        showToast(`Folder "${folder.name}" deleted`, 'success');
+        await refreshMedia();
+        navigateToFolder(state.currentFolderId);
+      } catch (err) {
+        showToast('Failed to delete folder', 'error');
+      }
+    });
+  });
+
+  // Close on click outside
+  const closeMenu = (e) => {
+    if (!menu.contains(e.target)) {
+      menu.remove();
+      document.removeEventListener('click', closeMenu);
+    }
+  };
+  setTimeout(() => document.addEventListener('click', closeMenu), 10);
+}
+
+function promptCreateFolder() {
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.innerHTML = `
+    <div class="confirm-card">
+      <h3>New Folder</h3>
+      <div class="form-field" style="margin: 16px 0;">
+        <input type="text" id="newFolderName" placeholder="Folder name" autofocus style="width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);font-size:0.95rem;" />
+      </div>
+      <div class="confirm-actions">
+        <button class="confirm-cancel">Cancel</button>
+        <button class="confirm-delete" style="background:var(--accent);color:white;">Create</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const input = overlay.querySelector('#newFolderName');
+  input.focus();
+
+  overlay.querySelector('.confirm-cancel').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+  const create = async () => {
+    const name = input.value.trim();
+    if (!name) { showToast('Folder name is required', 'error'); return; }
+    try {
+      await API.post('/folders', {
+        name,
+        parent_id: state.currentFolderId || null,
+        account_id: state.currentUser.id,
+      });
+      overlay.remove();
+      showToast(`Folder "${name}" created`, 'success');
+      navigateToFolder(state.currentFolderId);
+    } catch (err) {
+      let msg = 'Failed to create folder';
+      try { msg = JSON.parse(err.message).error; } catch(_) {}
+      showToast(msg, 'error');
+    }
+  };
+
+  overlay.querySelector('.confirm-delete').addEventListener('click', create);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') create(); });
+}
+
+function promptRenameFolder(folderId, currentName) {
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.innerHTML = `
+    <div class="confirm-card">
+      <h3>Rename Folder</h3>
+      <div class="form-field" style="margin: 16px 0;">
+        <input type="text" id="renameFolderInput" value="${currentName}" autofocus style="width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);font-size:0.95rem;" />
+      </div>
+      <div class="confirm-actions">
+        <button class="confirm-cancel">Cancel</button>
+        <button class="confirm-delete" style="background:var(--accent);color:white;">Rename</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const input = overlay.querySelector('#renameFolderInput');
+  input.focus();
+  input.select();
+
+  overlay.querySelector('.confirm-cancel').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+  const rename = async () => {
+    const name = input.value.trim();
+    if (!name) { showToast('Name is required', 'error'); return; }
+    try {
+      await API.put(`/folders/${folderId}`, { name });
+      overlay.remove();
+      showToast(`Renamed to "${name}"`, 'success');
+      navigateToFolder(state.currentFolderId);
+    } catch (err) {
+      showToast('Failed to rename folder', 'error');
+    }
+  };
+
+  overlay.querySelector('.confirm-delete').addEventListener('click', rename);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') rename(); });
+}
+
+// ────────────────────────────
+// CONNECTIONS VIEW
+// ────────────────────────────
+async function renderConnectionsView() {
+  const grid = $('#connectionsGrid');
+  if (!grid) return;
+
+  try {
+    const platforms = await API.get('/social/platforms');
+
+    // Add Google Drive as a connection too
+    let html = '';
+
+    // Social platforms
+    platforms.forEach(p => {
+      const iconMap = {
+        instagram: '<svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>',
+        tiktok: '<svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1v-3.5a6.37 6.37 0 00-.79-.05A6.34 6.34 0 003.15 15.2a6.34 6.34 0 0010.86 4.43V13.1a8.28 8.28 0 005.58 2.17V11.8a4.85 4.85 0 01-3.77-1.74V6.69h3.77z"/></svg>',
+        twitter: '<svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>',
+        youtube: '<svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>',
+      };
+
+      const statusClass = p.connected ? 'connected' : (p.available ? '' : 'unavailable');
+
+      html += `
+        <div class="connection-card ${statusClass}" data-platform="${p.id}">
+          <div class="connection-icon">${iconMap[p.id] || ''}</div>
+          <div class="connection-info">
+            <h3 class="connection-name">${p.name}</h3>
+            <p class="connection-desc">${p.connected ? (p.username ? '@' + p.username : 'Connected') : p.description}</p>
+            ${p.connected ? `<span class="connection-categories">${p.categories.join(', ')}</span>` : ''}
+          </div>
+          <div class="connection-actions">
+            ${p.connected
+              ? `<button class="conn-btn conn-browse" data-platform="${p.id}">Browse</button>
+                 <button class="conn-btn conn-disconnect" data-platform="${p.id}">Disconnect</button>`
+              : p.available
+                ? `<button class="conn-btn conn-connect" data-platform="${p.id}">Connect</button>`
+                : `<span class="conn-unavailable">Not configured</span>`
+            }
+          </div>
+        </div>
+      `;
+    });
+
+    // Google Drive card
+    html += `
+      <div class="connection-card ${state.gdriveConnected ? 'connected' : ''}" data-platform="gdrive">
+        <div class="connection-icon">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28"><path d="M7.71 3.5L1.15 15l3.43 5.97L11.14 9.47 7.71 3.5zm1.14 0l6.86 11.94H22.85L16 3.5H8.85zM15.29 16.5H1.71L5.14 22.47h13.72l-3.57-5.97z"/></svg>
+        </div>
+        <div class="connection-info">
+          <h3 class="connection-name">Google Drive</h3>
+          <p class="connection-desc">${state.gdriveConnected ? (state.gdriveEmail || 'Connected') : 'Import files from Drive'}</p>
+        </div>
+        <div class="connection-actions">
+          ${state.gdriveConnected
+            ? `<button class="conn-btn conn-browse" data-platform="gdrive">Browse</button>
+               <button class="conn-btn conn-disconnect" data-platform="gdrive">Disconnect</button>`
+            : `<button class="conn-btn conn-connect" data-platform="gdrive">Connect</button>`
+          }
+        </div>
+      </div>
+    `;
+
+    grid.innerHTML = html;
+
+    // Attach events
+    grid.querySelectorAll('.conn-connect').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const platform = btn.dataset.platform;
+        if (platform === 'gdrive') {
+          window.location.href = '/api/gdrive/auth?accountId=' + state.currentUser.id;
+        } else {
+          window.location.href = `/api/social/${platform}/auth?accountId=${state.currentUser.id}`;
+        }
+      });
+    });
+
+    grid.querySelectorAll('.conn-browse').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const platform = btn.dataset.platform;
+        if (platform === 'gdrive') {
+          openDriveBrowser();
+        } else {
+          openSocialBrowser(platform);
+        }
+      });
+    });
+
+    grid.querySelectorAll('.conn-disconnect').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const platform = btn.dataset.platform;
+        confirmAction(`Disconnect ${platform}`, `Are you sure you want to disconnect ${platform}?`, async () => {
+          try {
+            if (platform === 'gdrive') {
+              await handleGDriveDisconnect();
+            } else {
+              await API.del(`/social/${platform}/disconnect`);
+              showToast(`${platform} disconnected`, 'info');
+            }
+            renderConnectionsView();
+          } catch (err) {
+            showToast('Failed to disconnect', 'error');
+          }
+        });
+      });
+    });
+
+  } catch (err) {
+    console.error('Failed to load connections:', err);
+    grid.innerHTML = '<div class="empty-state">Failed to load connections.</div>';
+  }
+}
+
+// ────────────────────────────
+// SOCIAL MEDIA BROWSER
+// ────────────────────────────
+async function openSocialBrowser(platform) {
+  // Reuse the drive browser modal with different content
+  const browser = $('#driveBrowser');
+  browser.style.display = '';
+  document.body.style.overflow = 'hidden';
+
+  const platformNames = { instagram: 'Instagram', tiktok: 'TikTok', twitter: 'Twitter / X', youtube: 'YouTube' };
+  browser.querySelector('.drive-browser-title span').textContent = platformNames[platform] || platform;
+
+  driveSelectedFiles = {};
+  const grid = $('#driveFileGrid');
+  grid.innerHTML = '';
+  $('#driveSearchInput').value = '';
+  updateDriveSelectionUI();
+
+  const loading = $('#driveLoading');
+  const empty = $('#driveEmpty');
+  const loadMore = $('#driveLoadMore');
+  loading.style.display = '';
+  empty.style.display = 'none';
+  loadMore.style.display = 'none';
+
+  try {
+    const data = await API.get(`/social/${platform}/content`);
+    loading.style.display = 'none';
+
+    if (!data.items || data.items.length === 0) {
+      empty.style.display = '';
+      empty.querySelector('p').textContent = `No content found on ${platformNames[platform]}.`;
+      return;
+    }
+
+    data.items.forEach(item => {
+      const el = document.createElement('div');
+      el.className = 'drive-file-item';
+      el.dataset.fileId = item.id;
+      el.innerHTML = `
+        <div class="drive-file-thumb">
+          ${item.thumbnail ? `<img src="${item.thumbnail}" alt="" loading="lazy" />` : `<div class="drive-file-placeholder">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="32"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+          </div>`}
+          <div class="drive-file-check">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+          </div>
+          ${item.category ? `<span class="social-category-badge">${item.category}</span>` : ''}
+        </div>
+        <span class="drive-file-name">${item.title || item.id}</span>
+      `;
+
+      el.addEventListener('click', () => {
+        if (driveSelectedFiles[item.id]) {
+          delete driveSelectedFiles[item.id];
+          el.classList.remove('selected');
+        } else {
+          driveSelectedFiles[item.id] = { id: item.id, title: item.title, url: item.url, category: item.category };
+          el.classList.add('selected');
+        }
+        updateDriveSelectionUI();
+      });
+
+      grid.appendChild(el);
+    });
+
+    // Override import button for social
+    const importBtn = $('#driveImportBtn');
+    const newImport = importBtn.cloneNode(true);
+    importBtn.parentNode.replaceChild(newImport, importBtn);
+    newImport.addEventListener('click', () => {
+      const items = Object.values(driveSelectedFiles);
+      if (items.length === 0) return;
+      closeDriveBrowser();
+      importSocialContent(platform, items);
+    });
+
+  } catch (err) {
+    loading.style.display = 'none';
+    showToast(`Failed to load ${platformNames[platform]} content`, 'error');
+    closeDriveBrowser();
+  }
+}
+
+async function importSocialContent(platform, items) {
+  openModal('transferModal');
+  const fill = $('#transferProgressFill');
+  const countEl = $('#transferCount');
+  const statusEl = $('#transferStatus');
+  const titleEl = $('#transferTitle');
+
+  const platformNames = { instagram: 'Instagram', tiktok: 'TikTok', twitter: 'Twitter / X', youtube: 'YouTube' };
+  titleEl.textContent = `Importing from ${platformNames[platform]}...`;
+  fill.style.width = '0%';
+  countEl.textContent = `0 / ${items.length} files`;
+  statusEl.textContent = 'Starting import...';
+
+  try {
+    const response = await fetch(`/api/social/${platform}/import`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Account-Id': state.currentUser.id,
+      },
+      body: JSON.stringify({ items }),
+    });
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      let eventType = '';
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          eventType = line.slice(7).trim();
+        } else if (line.startsWith('data: ')) {
+          try {
+            const eventData = JSON.parse(line.slice(6));
+            if (eventType === 'progress') {
+              const pct = eventData.total > 0 ? Math.round((eventData.current / eventData.total) * 100) : 0;
+              fill.style.width = pct + '%';
+              countEl.textContent = `${eventData.current} / ${eventData.total} files`;
+              statusEl.textContent = eventData.fileName ? `Importing: ${eventData.fileName}` : 'Importing...';
+            } else if (eventType === 'done') {
+              fill.style.width = '100%';
+              statusEl.textContent = 'Complete!';
+              countEl.textContent = `${eventData.imported} imported`;
+              setTimeout(async () => {
+                closeModal('transferModal');
+                if (eventData.imported > 0) {
+                  showToast(`Imported ${eventData.imported} files from ${platformNames[platform]}`, 'success');
+                  await refreshMedia();
+                  updateDashboard();
+                  if (getVisibleMedia().length > 0) {
+                    $('#onboarding').style.display = 'none';
+                    $('#dashboardMedia').style.display = '';
+                    navigateToFolder(state.currentFolderId);
+                  }
+                }
+              }, 1200);
+            }
+          } catch (_) {}
+        }
+      }
+    }
+  } catch (err) {
+    closeModal('transferModal');
+    showToast('Import connection lost. Please try again.', 'error');
+  }
 }

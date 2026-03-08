@@ -76,3 +76,35 @@ CREATE INDEX IF NOT EXISTS idx_share_links_token ON share_links(token);
 CREATE INDEX IF NOT EXISTS idx_share_links_account ON share_links(account_id);
 CREATE INDEX IF NOT EXISTS idx_share_access_owner ON share_access(owner_account_id);
 CREATE INDEX IF NOT EXISTS idx_share_access_viewer ON share_access(viewer_account_id);
+
+-- Folders for file organization
+CREATE TABLE IF NOT EXISTS folders (
+  id          TEXT PRIMARY KEY,
+  account_id  TEXT NOT NULL,
+  parent_id   TEXT DEFAULT NULL,
+  name        TEXT NOT NULL,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE,
+  FOREIGN KEY (parent_id) REFERENCES folders(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_folders_account ON folders(account_id);
+CREATE INDEX IF NOT EXISTS idx_folders_parent ON folders(parent_id);
+
+-- Social media connections
+CREATE TABLE IF NOT EXISTS social_connections (
+  id                TEXT PRIMARY KEY,
+  account_id        TEXT NOT NULL,
+  platform          TEXT NOT NULL,
+  platform_user_id  TEXT,
+  platform_username TEXT,
+  access_token      TEXT,
+  refresh_token     TEXT,
+  token_expiry      TEXT,
+  scopes            TEXT,
+  connected_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_social_account ON social_connections(account_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_social_unique ON social_connections(account_id, platform);
