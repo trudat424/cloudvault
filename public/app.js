@@ -258,9 +258,8 @@ async function loadAppData() {
     const gdrive = await API.get('/gdrive/status');
     state.gdriveConnected = gdrive.connected;
     if (gdrive.connected && gdrive.needsReauth) {
-      // Scope changed — silently re-authorize
-      window.location.href = '/api/gdrive/auth?accountId=' + state.currentUser.id;
-      return;
+      // Scope changed — prompt user instead of silently redirecting (avoids redirect loop)
+      showToast('Google Drive permissions need updating. Please reconnect.', 'warning');
     }
     if (gdrive.connected) {
       state.gdriveEmail = gdrive.email || '';

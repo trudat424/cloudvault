@@ -121,9 +121,15 @@ router.get('/status', async (req, res) => {
     const about = await drive.about.get({ fields: 'user' });
 
     // Check if stored scope matches current required scope
+    // Only flag needsReauth if scope was previously saved but doesn't match current scopes
     const account = queryOne('SELECT * FROM accounts WHERE id = ?', [accountId]);
     const storedScope = account ? account.gdrive_scope : null;
-    const needsReauth = !storedScope || storedScope !== SCOPES.join(' ');
+    const needsReauth = storedScope ? storedScope !== SCOPES.join(' ') : false;
+
+    // Backfill scope if missing (e.g. connected before scope tracking was added)
+    if (!storedScope) {
+      saveAccountToken(accountId, 'gdrive_scope', SCOPES.join(' '));
+    }
 
     // Refresh credentials to get latest access token
     const creds = client.credentials;
