@@ -1,13 +1,14 @@
 /**
- * S3 Storage Service
- * Handles all file upload/download/delete operations using AWS S3.
- * Google Drive is only used for importing — S3 is the sole storage backend.
+ * S3-Compatible Storage Service
+ * Handles all file upload/download/delete operations.
+ * Works with AWS S3, Backblaze B2, Cloudflare R2, and any S3-compatible service.
+ * Google Drive is only used for importing — this is the sole storage backend.
  */
 
 const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const fs = require('fs');
 const path = require('path');
-const { AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, S3_BUCKET_NAME } = require('../config');
+const { S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, S3_REGION, S3_BUCKET_NAME, S3_ENDPOINT } = require('../config');
 
 // ── S3 Client ────────────────────────────────────────
 
@@ -15,18 +16,27 @@ let _s3 = null;
 
 function getS3Client() {
   if (_s3) return _s3;
-  _s3 = new S3Client({
-    region: AWS_REGION,
+
+  const config = {
+    region: S3_REGION,
     credentials: {
-      accessKeyId: AWS_ACCESS_KEY_ID,
-      secretAccessKey: AWS_SECRET_ACCESS_KEY,
+      accessKeyId: S3_ACCESS_KEY_ID,
+      secretAccessKey: S3_SECRET_ACCESS_KEY,
     },
-  });
+  };
+
+  // Custom endpoint for S3-compatible services (Backblaze B2, Cloudflare R2, etc.)
+  if (S3_ENDPOINT) {
+    config.endpoint = S3_ENDPOINT;
+    config.forcePathStyle = true; // R2 and most S3-compatible services use path style
+  }
+
+  _s3 = new S3Client(config);
   return _s3;
 }
 
 function isConfigured() {
-  return !!(AWS_ACCESS_KEY_ID && AWS_SECRET_ACCESS_KEY && S3_BUCKET_NAME);
+  return !!(S3_ACCESS_KEY_ID && S3_SECRET_ACCESS_KEY && S3_BUCKET_NAME);
 }
 
 // ── Key helpers ──────────────────────────────────────
