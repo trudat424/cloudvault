@@ -53,6 +53,8 @@ const state = {
   lightboxItems: [],
   transferHistory: [],
   adminLoggedIn: false,
+  driveQuota: null, // { limitGB, usageGB, percentUsed }
+  lastKnownLimitGB: null, // for detecting upgrades
 };
 
 function getVisibleMedia() {
@@ -246,12 +248,20 @@ async function loadAppData() {
 
     const gdrive = await API.get('/gdrive/status');
     state.gdriveConnected = gdrive.connected;
+    if (gdrive.connected && gdrive.needsReauth) {
+      // Scope changed — silently re-authorize
+      window.location.href = '/api/gdrive/auth';
+      return;
+    }
     if (gdrive.connected) {
       state.gdriveEmail = gdrive.email || '';
       state.gdriveName = gdrive.name || '';
       state.gdriveAccessToken = gdrive.accessToken || '';
       // Update sidebar button to show connected state
       $('#connectGDriveBtn span').textContent = 'Browse Google Drive';
+
+      // Fetch real Drive quota
+      await fetchDriveQuota();
     }
 
     if (getVisibleMedia().length > 0) {
@@ -303,6 +313,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initSearch();
   initSidebarToggle();
   initAdmin();
+  initStorageUpgrade();
 
   // Check for Google Drive OAuth callback
   const gdriveParam = urlParams.get('gdrive');
@@ -456,9 +467,14 @@ function initFabUpload() {
   fab.addEventListener('click', toggleFab);
   backdrop.addEventListener('click', closeFab);
 
-  // "From Device" option
+  // "From Device" option — requires Drive connection
   $('#fabDevice').addEventListener('click', () => {
     closeFab();
+    if (!state.gdriveConnected) {
+      showToast('Connect Google Drive first to upload files', 'info');
+      window.location.href = '/api/gdrive/auth';
+      return;
+    }
     fileInput.click();
   });
 
@@ -482,6 +498,13 @@ function initFabUpload() {
 async function startUpload(accountId, files) {
   if (!files || files.length === 0) {
     showToast('No files selected', 'error');
+    return;
+  }
+
+  // Warn if near storage limit
+  if (state.driveQuota && state.driveQuota.percentUsed >= 95) {
+    showToast('Storage almost full! Upgrade for more space.', 'error');
+    openUpgradeModal();
     return;
   }
 
@@ -524,6 +547,9 @@ async function startUpload(accountId, files) {
 
   await refreshMedia();
   updateDashboard();
+
+  // Refresh Drive quota after upload
+  if (state.gdriveConnected) fetchDriveQuota();
 
   if (totalUploaded > 0) {
     showToast(`Uploaded ${totalUploaded} file${totalUploaded > 1 ? 's' : ''}`, 'success');
@@ -758,6 +784,138 @@ async function handleGDriveDisconnect() {
 }
 
 // ────────────────────────────
+// DRIVE QUOTA & STORAGE
+// ────────────────────────────
+async function fetchDriveQuota() {
+  try {
+    const quota = await API.get('/gdrive/quota');
+    const prevLimit = state.driveQuota ? state.driveQuota.limitGB : null;
+    state.driveQuota = quota;
+
+    // Detect upgrade: limit increased since last check
+    if (prevLimit !== null && quota.limitGB > prevLimit) {
+      const newLabel = formatStorageSize(quota.limitGB);
+      showToast(`Storage upgraded to ${newLabel}!`, 'success');
+    }
+
+    // Save last known limit for cross-session detection
+    const savedLimit = parseFloat(localStorage.getItem('cloudvault-drive-limit') || '0');
+    if (savedLimit > 0 && quota.limitGB > savedLimit) {
+      const newLabel = formatStorageSize(quota.limitGB);
+      showToast(`Storage upgraded to ${newLabel}!`, 'success');
+    }
+    localStorage.setItem('cloudvault-drive-limit', String(quota.limitGB));
+
+    updateStorageUI();
+    return quota;
+  } catch (e) {
+    console.error('Failed to fetch Drive quota:', e);
+    return null;
+  }
+}
+
+function formatStorageSize(gb) {
+  if (gb < 0) return 'Unlimited';
+  if (gb >= 1000) return (gb / 1000).toFixed(gb % 1000 === 0 ? 0 : 1) + ' TB';
+  if (gb >= 100) return Math.round(gb) + ' GB';
+  return gb.toFixed(1) + ' GB';
+}
+
+function updateStorageUI() {
+  const indicator = $('#storageIndicator');
+  const upgradeBtn = $('#storageUpgradeBtn');
+
+  if (state.driveQuota && state.driveQuota.limitGB > 0) {
+    const q = state.driveQuota;
+    const usageLabel = formatStorageSize(q.usageGB);
+    const limitLabel = formatStorageSize(q.limitGB);
+    const pct = Math.min(q.percentUsed, 100);
+
+    $('#storageFill').style.width = pct + '%';
+    $('#storageText').textContent = `${usageLabel} / ${limitLabel}`;
+
+    // Warn when >80% full
+    if (pct >= 80) {
+      indicator.classList.add('warning');
+      upgradeBtn.style.display = '';
+    } else {
+      indicator.classList.remove('warning');
+      upgradeBtn.style.display = '';
+    }
+  } else if (state.driveQuota && state.driveQuota.limitGB < 0) {
+    // Unlimited (e.g. Google Workspace)
+    const usageLabel = formatStorageSize(state.driveQuota.usageGB);
+    $('#storageFill').style.width = '0%';
+    $('#storageText').textContent = `${usageLabel} / Unlimited`;
+    indicator.classList.remove('warning');
+    upgradeBtn.style.display = 'none';
+  } else {
+    // Not connected — show app-level storage
+    const visible = getVisibleMedia();
+    const totalGB = (visible.reduce((sum, m) => sum + m.sizeMB, 0) / 1024).toFixed(1);
+    $('#storageFill').style.width = '0%';
+    $('#storageText').textContent = `${totalGB} GB / 15 GB`;
+    upgradeBtn.style.display = 'none';
+  }
+}
+
+function openUpgradeModal() {
+  const modal = $('#upgradeModal');
+  modal.classList.add('active');
+
+  if (state.driveQuota) {
+    const q = state.driveQuota;
+    const pct = Math.min(q.percentUsed, 100);
+    const usageLabel = formatStorageSize(q.usageGB);
+    const limitLabel = formatStorageSize(q.limitGB);
+    $('#upgradeBarFill').style.width = pct + '%';
+    if (pct >= 80) $('#upgradeBarFill').classList.add('danger');
+    else $('#upgradeBarFill').classList.remove('danger');
+    $('#upgradeUsageText').textContent = `${usageLabel} of ${limitLabel} used (${pct.toFixed(0)}%)`;
+
+    // Highlight current plan
+    const plans = modal.querySelectorAll('.upgrade-plan');
+    plans.forEach(p => p.classList.remove('active'));
+
+    const limitGB = q.limitGB;
+    if (limitGB <= 15) plans[0].classList.add('active');
+    else if (limitGB <= 100) plans[1].classList.add('active');
+    else if (limitGB <= 200) plans[2].classList.add('active');
+    else plans[3].classList.add('active');
+  }
+}
+
+async function checkForUpgrade() {
+  const btn = $('#checkUpgradeBtn');
+  btn.textContent = 'Checking...';
+  btn.classList.add('checking');
+
+  const prevLimit = state.driveQuota ? state.driveQuota.limitGB : 0;
+  const quota = await fetchDriveQuota();
+
+  btn.classList.remove('checking');
+
+  if (quota && quota.limitGB > prevLimit) {
+    btn.textContent = 'Upgrade detected!';
+    const newLabel = formatStorageSize(quota.limitGB);
+    showToast(`Storage upgraded to ${newLabel}!`, 'success');
+
+    // Update plan badges
+    openUpgradeModal(); // refresh display
+
+    // Auto close modal after brief delay
+    setTimeout(() => {
+      $('#upgradeModal').classList.remove('active');
+    }, 2000);
+  } else {
+    btn.textContent = 'No changes detected — try again in a minute';
+    setTimeout(() => {
+      btn.textContent = "I've upgraded — check now";
+    }, 3000);
+  }
+}
+
+// ────────────────────────────
 // DASHBOARD
 // ────────────────────────────
 async function updateDashboard() {
@@ -770,9 +928,33 @@ async function updateDashboard() {
   $('#totalVideos').textContent = videos.length;
   $('#totalStorage').textContent = totalGB + ' GB';
 
-  const pct = Math.min((parseFloat(totalGB) / 50) * 100, 100);
-  $('#storageFill').style.width = pct + '%';
-  $('#storageText').textContent = `${totalGB} GB / 50 GB`;
+  updateStorageUI();
+}
+
+function initStorageUpgrade() {
+  // Upgrade button in sidebar
+  $('#storageUpgradeBtn').addEventListener('click', (e) => {
+    e.preventDefault();
+    openUpgradeModal();
+  });
+
+  // "I've upgraded — check now" button
+  $('#checkUpgradeBtn').addEventListener('click', checkForUpgrade);
+
+  // Also allow clicking the storage indicator itself when in warning state
+  $('#storageIndicator').addEventListener('click', (e) => {
+    if (e.target.closest('.storage-upgrade-btn')) return; // handled above
+    if ($('#storageIndicator').classList.contains('warning')) {
+      openUpgradeModal();
+    }
+  });
+
+  // Periodically re-check quota every 5 minutes (to detect upgrades)
+  setInterval(async () => {
+    if (state.gdriveConnected) {
+      await fetchDriveQuota();
+    }
+  }, 5 * 60 * 1000);
 }
 
 // ────────────────────────────

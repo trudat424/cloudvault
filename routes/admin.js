@@ -1,9 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const path = require('path');
-const fs = require('fs');
 const { queryAll, queryOne, run } = require('../db/database');
-const { DATA_DIR } = require('../config');
+const driveStorage = require('../services/driveStorage');
 
 // POST /api/admin/login
 router.post('/login', (req, res) => {
@@ -43,11 +41,13 @@ router.get('/stats', (req, res) => {
 });
 
 // DELETE /api/admin/media/all - clear all media
-router.delete('/media/all', (req, res) => {
-  // Delete all files from disk
-  const uploadsDir = path.join(DATA_DIR, 'uploads');
-  clearDirectory(path.join(uploadsDir, 'originals'));
-  clearDirectory(path.join(uploadsDir, 'thumbnails'));
+router.delete('/media/all', async (req, res) => {
+  // Delete all files from Google Drive
+  const allMedia = queryAll('SELECT drive_file_id, drive_thumb_id FROM media');
+  for (const m of allMedia) {
+    if (m.drive_file_id) await driveStorage.deleteFile(m.drive_file_id);
+    if (m.drive_thumb_id) await driveStorage.deleteFile(m.drive_thumb_id);
+  }
 
   run('DELETE FROM media');
   res.json({ success: true });
@@ -61,33 +61,19 @@ router.delete('/accounts/all', (req, res) => {
 });
 
 // DELETE /api/admin/person/:accountId - remove person + their media
-router.delete('/person/:accountId', (req, res) => {
+router.delete('/person/:accountId', async (req, res) => {
   const accountId = req.params.accountId;
 
-  // Get all media files for this person
-  const mediaFiles = queryAll('SELECT stored_name FROM media WHERE account_id = ?', [accountId]);
-
-  // Delete files from disk
-  for (const file of mediaFiles) {
-    const origPath = path.join(DATA_DIR, 'uploads', 'originals', file.stored_name);
-    const thumbName = path.basename(file.stored_name, path.extname(file.stored_name)) + '.jpg';
-    const thumbPath = path.join(DATA_DIR, 'uploads', 'thumbnails', thumbName);
-
-    try { fs.unlinkSync(origPath); } catch (e) { /* ignore */ }
-    try { fs.unlinkSync(thumbPath); } catch (e) { /* ignore */ }
+  // Get all media files for this person and delete from Drive
+  const mediaFiles = queryAll('SELECT drive_file_id, drive_thumb_id FROM media WHERE account_id = ?', [accountId]);
+  for (const m of mediaFiles) {
+    if (m.drive_file_id) await driveStorage.deleteFile(m.drive_file_id);
+    if (m.drive_thumb_id) await driveStorage.deleteFile(m.drive_thumb_id);
   }
 
   run('DELETE FROM media WHERE account_id = ?', [accountId]);
   run('DELETE FROM accounts WHERE id = ?', [accountId]);
   res.json({ success: true });
 });
-
-function clearDirectory(dirPath) {
-  if (!fs.existsSync(dirPath)) return;
-  const files = fs.readdirSync(dirPath);
-  for (const file of files) {
-    try { fs.unlinkSync(path.join(dirPath, file)); } catch (e) { /* ignore */ }
-  }
-}
 
 module.exports = router;

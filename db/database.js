@@ -34,6 +34,10 @@ async function initDatabase() {
   // Migration: add source_id column if missing
   try { database.run("ALTER TABLE media ADD COLUMN source_id TEXT"); } catch(e) { /* column already exists */ }
 
+  // Migration: add Google Drive file ID columns
+  try { database.run("ALTER TABLE media ADD COLUMN drive_file_id TEXT"); } catch(e) { /* column already exists */ }
+  try { database.run("ALTER TABLE media ADD COLUMN drive_thumb_id TEXT"); } catch(e) { /* column already exists */ }
+
   // Migration: add password column to accounts for per-user viewing password
   try { database.run("ALTER TABLE accounts ADD COLUMN password TEXT DEFAULT NULL"); } catch(e) { /* column already exists */ }
 

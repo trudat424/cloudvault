@@ -1,12 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const path = require('path');
+const os = require('os');
 const fs = require('fs');
 const upload = require('../middleware/upload');
 const { queryAll, queryOne, run } = require('../db/database');
 const { generateThumbnail } = require('../services/thumbnail');
 const { extractMetadata } = require('../services/metadata');
-const { DATA_DIR } = require('../config');
+const { STORAGE_LIMIT_GB } = require('../config');
+const driveStorage = require('../services/driveStorage');
 
 // GET /api/media/stats - dashboard stats
 router.get('/stats', (req, res) => {
@@ -26,6 +28,7 @@ router.get('/stats', (req, res) => {
     videos: stats.videos,
     people: stats.people,
     totalGB: (stats.totalBytes / (1024 * 1024 * 1024)).toFixed(1),
+    storageLimitGB: STORAGE_LIMIT_GB,
   });
 });
 
@@ -50,6 +53,41 @@ router.get('/people', (req, res) => {
     videos: r.videos,
     totalGB: (r.totalBytes / (1024 * 1024 * 1024)).toFixed(2),
   })));
+});
+
+// GET /api/media/file/:id - stream original from Google Drive
+router.get('/file/:id', async (req, res) => {
+  const row = queryOne('SELECT * FROM media WHERE id = ?', [req.params.id]);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  if (!row.drive_file_id) return res.status(404).json({ error: 'File not in cloud storage' });
+
+  try {
+    const { stream, mimeType, size } = await driveStorage.getFileStream(row.drive_file_id);
+    res.set('Content-Type', mimeType || row.mime_type);
+    if (size) res.set('Content-Length', String(size));
+    res.set('Cache-Control', 'public, max-age=86400');
+    stream.pipe(res);
+  } catch (err) {
+    console.error('Drive file stream error:', err.message);
+    res.status(500).json({ error: 'Failed to load file' });
+  }
+});
+
+// GET /api/media/thumb/:id - stream thumbnail from Google Drive
+router.get('/thumb/:id', async (req, res) => {
+  const row = queryOne('SELECT * FROM media WHERE id = ?', [req.params.id]);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  if (!row.drive_thumb_id) return res.status(404).json({ error: 'Thumbnail not available' });
+
+  try {
+    const { stream } = await driveStorage.getFileStream(row.drive_thumb_id);
+    res.set('Content-Type', 'image/jpeg');
+    res.set('Cache-Control', 'public, max-age=604800');
+    stream.pipe(res);
+  } catch (err) {
+    console.error('Drive thumb stream error:', err.message);
+    res.status(500).json({ error: 'Failed to load thumbnail' });
+  }
 });
 
 // GET /api/media - list with filters
@@ -100,70 +138,93 @@ router.get('/:id', (req, res) => {
   res.json(mapMediaRow(row));
 });
 
-// POST /api/media/upload - upload files
+// POST /api/media/upload - upload files to Google Drive
 router.post('/upload', upload.array('files', 20), async (req, res) => {
   const { account_id } = req.body;
   if (!account_id) return res.status(400).json({ error: 'account_id required' });
+
+  // Check Drive connection
+  if (!driveStorage.isConnected()) {
+    for (const file of req.files) {
+      try { fs.unlinkSync(file.path); } catch (e) { /* ignore */ }
+    }
+    return res.status(401).json({ error: 'Connect Google Drive first to upload files' });
+  }
 
   const account = queryOne('SELECT * FROM accounts WHERE id = ?', [account_id]);
   if (!account) return res.status(404).json({ error: 'Account not found' });
 
   const results = [];
+  const tmpDir = path.join(os.tmpdir(), 'cloudvault-uploads');
 
   for (const file of req.files) {
     const id = path.basename(file.filename, path.extname(file.filename));
     const isVideo = file.mimetype.startsWith('video/');
     const type = isVideo ? 'video' : 'photo';
 
-    // Extract metadata for images
-    let meta = {};
-    if (!isVideo) {
-      meta = await extractMetadata(file.path);
+    try {
+      // Extract metadata for images
+      let meta = {};
+      if (!isVideo) {
+        meta = await extractMetadata(file.path);
+      }
+
+      // Upload original to Google Drive
+      const driveFileId = await driveStorage.uploadFile(file.path, file.originalname, file.mimetype, false);
+
+      // Generate + upload thumbnail for images
+      let hasThumbnail = 0;
+      let driveThumbId = null;
+      if (!isVideo) {
+        const thumbPath = path.join(tmpDir, id + '_thumb.jpg');
+        hasThumbnail = (await generateThumbnail(file.path, thumbPath)) ? 1 : 0;
+        if (hasThumbnail) {
+          driveThumbId = await driveStorage.uploadFile(thumbPath, id + '.jpg', 'image/jpeg', true);
+          try { fs.unlinkSync(thumbPath); } catch (e) { /* ignore */ }
+        }
+      }
+
+      // Clean up temp original
+      try { fs.unlinkSync(file.path); } catch (e) { /* ignore */ }
+
+      run(
+        `INSERT INTO media (id, account_id, person_name, person_email, type,
+          original_name, stored_name, mime_type, size_bytes,
+          width, height, date_taken, latitude, longitude,
+          camera_make, camera_model, has_thumbnail,
+          drive_file_id, drive_thumb_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id, account_id, account.name, account.email, type,
+          file.originalname, file.filename, file.mimetype, file.size,
+          meta.width || null, meta.height || null,
+          meta.dateTaken || new Date().toISOString(),
+          meta.latitude || null, meta.longitude || null,
+          meta.cameraMake || null, meta.cameraModel || null,
+          hasThumbnail,
+          driveFileId, driveThumbId,
+        ]
+      );
+
+      const row = queryOne('SELECT * FROM media WHERE id = ?', [id]);
+      results.push(mapMediaRow(row));
+    } catch (err) {
+      console.error(`Upload failed for ${file.originalname}:`, err.message);
+      try { fs.unlinkSync(file.path); } catch (e) { /* ignore */ }
     }
-
-    // Generate thumbnail for images
-    let hasThumbnail = 0;
-    if (!isVideo) {
-      const thumbPath = path.join(DATA_DIR, 'uploads', 'thumbnails', id + '.jpg');
-      hasThumbnail = (await generateThumbnail(file.path, thumbPath)) ? 1 : 0;
-    }
-
-    run(
-      `INSERT INTO media (id, account_id, person_name, person_email, type,
-        original_name, stored_name, mime_type, size_bytes,
-        width, height, date_taken, latitude, longitude,
-        camera_make, camera_model, has_thumbnail)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id, account_id, account.name, account.email, type,
-        file.originalname, file.filename, file.mimetype, file.size,
-        meta.width || null, meta.height || null,
-        meta.dateTaken || new Date().toISOString(),
-        meta.latitude || null, meta.longitude || null,
-        meta.cameraMake || null, meta.cameraModel || null,
-        hasThumbnail,
-      ]
-    );
-
-    const row = queryOne('SELECT * FROM media WHERE id = ?', [id]);
-    results.push(mapMediaRow(row));
   }
 
   res.json({ media: results, count: results.length });
 });
 
 // DELETE /api/media/:id - delete single
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   const row = queryOne('SELECT * FROM media WHERE id = ?', [req.params.id]);
   if (!row) return res.status(404).json({ error: 'Not found' });
 
-  // Delete files from disk
-  const origPath = path.join(DATA_DIR, 'uploads', 'originals', row.stored_name);
-  const thumbPath = path.join(DATA_DIR, 'uploads', 'thumbnails',
-    path.basename(row.stored_name, path.extname(row.stored_name)) + '.jpg');
-
-  try { fs.unlinkSync(origPath); } catch (e) { /* ignore */ }
-  try { fs.unlinkSync(thumbPath); } catch (e) { /* ignore */ }
+  // Delete files from Google Drive
+  if (row.drive_file_id) await driveStorage.deleteFile(row.drive_file_id);
+  if (row.drive_thumb_id) await driveStorage.deleteFile(row.drive_thumb_id);
 
   run('DELETE FROM media WHERE id = ?', [req.params.id]);
   res.json({ success: true });
@@ -171,8 +232,6 @@ router.delete('/:id', (req, res) => {
 
 function mapMediaRow(row) {
   const id = row.id;
-  const ext = path.extname(row.stored_name);
-  const thumbName = id + '.jpg';
   return {
     id,
     accountId: row.account_id,
@@ -199,8 +258,8 @@ function mapMediaRow(row) {
     category: row.category || '',
     duration: row.duration,
     has_thumbnail: row.has_thumbnail,
-    thumbnail: row.has_thumbnail ? `/uploads/thumbnails/${thumbName}` : null,
-    original: `/uploads/originals/${row.stored_name}`,
+    thumbnail: row.drive_thumb_id ? `/api/media/thumb/${id}` : null,
+    original: row.drive_file_id ? `/api/media/file/${id}` : null,
   };
 }
 

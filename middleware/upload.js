@@ -1,10 +1,15 @@
 const multer = require('multer');
 const path = require('path');
+const os = require('os');
+const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
-const { DATA_DIR } = require('../config');
+
+// Temp directory for uploads (files are moved to Google Drive, then deleted)
+const TEMP_DIR = path.join(os.tmpdir(), 'cloudvault-uploads');
+if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
 
 const storage = multer.diskStorage({
-  destination: path.join(DATA_DIR, 'uploads', 'originals'),
+  destination: TEMP_DIR,
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     cb(null, uuidv4() + ext);

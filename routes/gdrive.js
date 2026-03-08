@@ -2,49 +2,24 @@ const express = require('express');
 const router = express.Router();
 const { google } = require('googleapis');
 const path = require('path');
+const os = require('os');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { queryOne, queryAll, run } = require('../db/database');
-const { DATA_DIR, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI } = require('../config');
+const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, STORAGE_LIMIT_GB } = require('../config');
 const { generateThumbnail } = require('../services/thumbnail');
 const { extractMetadata } = require('../services/metadata');
+const driveStorage = require('../services/driveStorage');
 
-// drive.readonly scope — allows listing + downloading all user files
-// Used for the custom in-app Drive browser (no Google Picker needed)
+// drive.file = upload/read/delete files the app creates
+// drive.readonly = browse all Drive files (Drive browser feature)
 const SCOPES = [
+  'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/drive.readonly',
 ];
 
-function getOAuth2Client() {
-  return new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI);
-}
-
-// Load stored tokens from DB into an OAuth2 client
-function getAuthedClient() {
-  const accessToken = queryOne("SELECT value FROM settings WHERE key = 'gdrive_access_token'");
-  const refreshToken = queryOne("SELECT value FROM settings WHERE key = 'gdrive_refresh_token'");
-  const tokenExpiry = queryOne("SELECT value FROM settings WHERE key = 'gdrive_token_expiry'");
-
-  if (!accessToken || !refreshToken) return null;
-
-  const client = getOAuth2Client();
-  client.setCredentials({
-    access_token: accessToken.value,
-    refresh_token: refreshToken.value,
-    expiry_date: tokenExpiry ? parseInt(tokenExpiry.value) : 0,
-  });
-
-  return client;
-}
-
-function saveSetting(key, value) {
-  const existing = queryOne('SELECT value FROM settings WHERE key = ?', [key]);
-  if (existing) {
-    run('UPDATE settings SET value = ? WHERE key = ?', [value, key]);
-  } else {
-    run('INSERT INTO settings (key, value) VALUES (?, ?)', [key, value]);
-  }
-}
+// Reuse shared helpers from driveStorage
+const { getOAuth2Client, getAuthedClient, saveSetting } = driveStorage;
 
 function deleteSetting(key) {
   run('DELETE FROM settings WHERE key = ?', [key]);
@@ -60,6 +35,7 @@ router.get('/auth', (req, res) => {
   const authUrl = client.generateAuthUrl({
     access_type: 'offline',
     scope: SCOPES,
+    prompt: 'consent',
   });
 
   res.redirect(authUrl);
@@ -87,6 +63,7 @@ router.get('/callback', async (req, res) => {
     }
     saveSetting('gdrive_token_expiry', String(tokens.expiry_date || 0));
     saveSetting('gdrive_connected', 'true');
+    saveSetting('gdrive_scope', SCOPES.join(' '));
 
     res.redirect('/?gdrive=connected');
   } catch (err) {
@@ -115,11 +92,16 @@ router.get('/status', async (req, res) => {
     const drive = google.drive({ version: 'v3', auth: client });
     const about = await drive.about.get({ fields: 'user' });
 
+    // Check if stored scope matches current required scope
+    const storedScope = queryOne("SELECT value FROM settings WHERE key = 'gdrive_scope'");
+    const needsReauth = !storedScope || storedScope.value !== SCOPES.join(' ');
+
     // Refresh credentials to get latest access token
     const creds = client.credentials;
 
     res.json({
       connected: true,
+      needsReauth,
       email: about.data.user.emailAddress,
       name: about.data.user.displayName,
       accessToken: creds.access_token,
@@ -132,6 +114,30 @@ router.get('/status', async (req, res) => {
     deleteSetting('gdrive_token_expiry');
     deleteSetting('gdrive_connected');
     res.json({ connected: false });
+  }
+});
+
+// GET /api/gdrive/quota — real Google Drive storage quota
+router.get('/quota', async (req, res) => {
+  try {
+    const quota = await driveStorage.getStorageQuota();
+    const limitGB = quota.limit > 0 ? parseFloat((quota.limit / (1024 ** 3)).toFixed(2)) : -1;
+    const usageGB = parseFloat((quota.usage / (1024 ** 3)).toFixed(2));
+    const usageInDriveGB = parseFloat((quota.usageInDrive / (1024 ** 3)).toFixed(2));
+    const trashGB = parseFloat((quota.usageInDriveTrash / (1024 ** 3)).toFixed(2));
+
+    res.json({
+      limitBytes: quota.limit,
+      usageBytes: quota.usage,
+      limitGB,
+      usageGB,
+      usageInDriveGB,
+      trashGB,
+      percentUsed: quota.limit > 0 ? parseFloat(((quota.usage / quota.limit) * 100).toFixed(1)) : 0,
+    });
+  } catch (err) {
+    console.error('Drive quota error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch storage quota' });
   }
 });
 
@@ -203,139 +209,11 @@ router.delete('/disconnect', async (req, res) => {
   res.json({ connected: false });
 });
 
-// Find or create "CloudVault" folder in Drive root
-async function getOrCreateFolder(drive) {
-  const folderName = 'CloudVault';
-
-  // Search for existing folder
-  const search = await drive.files.list({
-    q: `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
-    fields: 'files(id, name)',
-    spaces: 'drive',
-  });
-
-  if (search.data.files.length > 0) {
-    return search.data.files[0].id;
-  }
-
-  // Create folder
-  const folder = await drive.files.create({
-    requestBody: {
-      name: folderName,
-      mimeType: 'application/vnd.google-apps.folder',
-    },
-    fields: 'id',
-  });
-
-  return folder.data.id;
-}
-
-// POST /api/gdrive/transfer — upload files to Google Drive
-router.post('/transfer', async (req, res) => {
-  const { ids } = req.body;
-
-  if (!ids || !Array.isArray(ids) || ids.length === 0) {
-    return res.status(400).json({ error: 'No file IDs provided' });
-  }
-
-  const client = getAuthedClient();
-  if (!client) {
-    return res.status(401).json({ error: 'Google Drive not connected' });
-  }
-
-  try {
-    // Refresh token if needed
-    const tokenInfo = client.credentials;
-    if (tokenInfo.expiry_date && tokenInfo.expiry_date < Date.now()) {
-      const { credentials } = await client.refreshAccessToken();
-      saveSetting('gdrive_access_token', credentials.access_token);
-      saveSetting('gdrive_token_expiry', String(credentials.expiry_date || 0));
-    }
-
-    const drive = google.drive({ version: 'v3', auth: client });
-    const folderId = await getOrCreateFolder(drive);
-
-    const results = [];
-    let successCount = 0;
-    let failCount = 0;
-
-    for (const mediaId of ids) {
-      const media = queryOne('SELECT * FROM media WHERE id = ?', [mediaId]);
-      if (!media) {
-        results.push({ id: mediaId, success: false, error: 'Not found' });
-        failCount++;
-        continue;
-      }
-
-      const filePath = path.join(DATA_DIR, 'uploads', 'originals', media.stored_name);
-      if (!fs.existsSync(filePath)) {
-        results.push({ id: mediaId, success: false, error: 'File missing' });
-        failCount++;
-        continue;
-      }
-
-      try {
-        const mimeType = media.type === 'video' ? 'video/mp4' : 'image/jpeg';
-        const ext = path.extname(media.stored_name);
-
-        await drive.files.create({
-          requestBody: {
-            name: media.original_name || `cloudvault_${mediaId}${ext}`,
-            parents: [folderId],
-          },
-          media: {
-            mimeType,
-            body: fs.createReadStream(filePath),
-          },
-          fields: 'id,name',
-        });
-
-        results.push({ id: mediaId, success: true, name: media.original_name });
-        successCount++;
-      } catch (uploadErr) {
-        console.error(`Failed to upload ${mediaId}:`, uploadErr.message);
-        results.push({ id: mediaId, success: false, error: uploadErr.message });
-        failCount++;
-      }
-    }
-
-    // Record transfer in history
-    const totalSize = ids.reduce((sum, id) => {
-      const m = queryOne('SELECT size_bytes FROM media WHERE id = ?', [id]);
-      return sum + (m ? m.size_bytes : 0);
-    }, 0);
-
-    run(
-      'INSERT INTO transfer_history (id, type, description, file_count, size_bytes, status) VALUES (?, ?, ?, ?, ?, ?)',
-      [
-        uuidv4(),
-        'transfer',
-        `Transferred ${successCount} files to Google Drive`,
-        successCount,
-        totalSize,
-        failCount === 0 ? 'complete' : 'partial',
-      ]
-    );
-
-    res.json({
-      success: true,
-      transferred: successCount,
-      failed: failCount,
-      total: ids.length,
-      results,
-    });
-  } catch (err) {
-    console.error('Transfer error:', err.message);
-    res.status(500).json({ error: 'Transfer failed: ' + err.message });
-  }
-});
-
-// Helper: ensure upload directories exist
-function ensureDirs() {
-  const origDir = path.join(DATA_DIR, 'uploads', 'originals');
-  const thumbDir = path.join(DATA_DIR, 'uploads', 'thumbnails');
-  if (!fs.existsSync(origDir)) fs.mkdirSync(origDir, { recursive: true });
-  if (!fs.existsSync(thumbDir)) fs.mkdirSync(thumbDir, { recursive: true });
+// Helper: ensure temp directory exists
+function ensureTempDir() {
+  const tmpDir = path.join(os.tmpdir(), 'cloudvault-imports');
+  if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+  return tmpDir;
 }
 
 // Helper: get or create a gdrive account for the connected user
@@ -441,7 +319,7 @@ router.post('/import', async (req, res) => {
       return;
     }
 
-    ensureDirs();
+    const tmpDir = ensureTempDir();
 
     let imported = 0;
     let failed = 0;
@@ -458,49 +336,61 @@ router.post('/import', async (req, res) => {
           fileName: file.name,
         });
 
-        // Download file from Drive
+        // Download file from Drive to temp
         const fileId = uuidv4();
         const ext = getExtFromMime(file.mimeType) || path.extname(file.name) || '.jpg';
         const storedName = `${fileId}${ext}`;
-        const filePath = path.join(DATA_DIR, 'uploads', 'originals', storedName);
+        const tempPath = path.join(tmpDir, storedName);
 
         const response = await drive.files.get(
           { fileId: file.id, alt: 'media' },
           { responseType: 'stream' }
         );
 
-        // Write stream to file
+        // Write stream to temp file
         await new Promise((resolve, reject) => {
-          const dest = fs.createWriteStream(filePath);
+          const dest = fs.createWriteStream(tempPath);
           response.data.pipe(dest);
           dest.on('finish', resolve);
           dest.on('error', reject);
         });
 
-        const fileStats = fs.statSync(filePath);
+        const fileStats = fs.statSync(tempPath);
         const isVideo = file.mimeType.startsWith('video/');
         const type = isVideo ? 'video' : 'photo';
 
         // Extract metadata for images
         let meta = {};
         if (!isVideo) {
-          meta = await extractMetadata(filePath);
+          meta = await extractMetadata(tempPath);
         }
 
-        // Generate thumbnail for images
+        // Upload original to CloudVault folder in Drive
+        const driveFileId = await driveStorage.uploadFile(tempPath, file.name, file.mimeType, false);
+
+        // Generate + upload thumbnail for images
         let hasThumbnail = 0;
+        let driveThumbId = null;
         if (!isVideo) {
-          const thumbPath = path.join(DATA_DIR, 'uploads', 'thumbnails', fileId + '.jpg');
-          hasThumbnail = (await generateThumbnail(filePath, thumbPath)) ? 1 : 0;
+          const thumbPath = path.join(tmpDir, fileId + '_thumb.jpg');
+          hasThumbnail = (await generateThumbnail(tempPath, thumbPath)) ? 1 : 0;
+          if (hasThumbnail) {
+            driveThumbId = await driveStorage.uploadFile(thumbPath, fileId + '.jpg', 'image/jpeg', true);
+            try { fs.unlinkSync(thumbPath); } catch (e) { /* ignore */ }
+          }
         }
+
+        // Clean up temp original
+        try { fs.unlinkSync(tempPath); } catch (e) { /* ignore */ }
 
         // Insert into media table
         run(
           `INSERT INTO media (id, account_id, person_name, person_email, type,
             original_name, stored_name, mime_type, size_bytes,
             width, height, date_taken, latitude, longitude,
-            camera_make, camera_model, has_thumbnail, source_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            camera_make, camera_model, has_thumbnail, source_id,
+            drive_file_id, drive_thumb_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             fileId, account.id, account.name, account.email, type,
             file.name, storedName, file.mimeType, fileStats.size,
@@ -509,6 +399,7 @@ router.post('/import', async (req, res) => {
             meta.latitude || null, meta.longitude || null,
             meta.cameraMake || null, meta.cameraModel || null,
             hasThumbnail, file.id,
+            driveFileId, driveThumbId,
           ]
         );
 

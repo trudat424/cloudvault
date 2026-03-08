@@ -13,7 +13,6 @@ const PORT = process.env.PORT || 3456;
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
-app.use('/uploads', express.static(path.join(DATA_DIR, 'uploads')));
 
 // API Routes
 app.use('/api/accounts', require('./routes/accounts'));
@@ -31,10 +30,6 @@ app.get('*', (req, res) => {
 // Start
 async function start() {
   await initDatabase();
-
-  // Ensure upload directories exist
-  fs.mkdirSync(path.join(DATA_DIR, 'uploads', 'originals'), { recursive: true });
-  fs.mkdirSync(path.join(DATA_DIR, 'uploads', 'thumbnails'), { recursive: true });
 
   app.listen(PORT, () => {
     console.log(`CloudVault running at http://localhost:${PORT}`);
