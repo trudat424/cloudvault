@@ -5213,6 +5213,40 @@ img { display: block; max-width: 100%; }
   }
 }
 
+/* ═══════════════════════════════════════════
+   DRAG & DROP
+   ═══════════════════════════════════════════ */
+
+.media-card.dragging,
+.folder-card.dragging {
+  opacity: 0.35;
+  transform: scale(0.95) !important;
+  transition: opacity 0.2s, transform 0.2s;
+  box-shadow: none !important;
+}
+
+.folder-card.drag-over {
+  border-color: var(--accent) !important;
+  background: var(--accent-glow) !important;
+  box-shadow: 0 0 0 2px var(--accent), var(--shadow-md) !important;
+  transform: translateY(-2px) scale(1.03) !important;
+  transition: all 0.15s ease;
+}
+
+.breadcrumb-item.drag-over {
+  background: var(--accent-glow) !important;
+  color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent);
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+
+/* Prevent child pointer events during drag to avoid dragleave flicker */
+.folder-card.drag-over *,
+.breadcrumb-item.drag-over * {
+  pointer-events: none;
+}
+
 /* Smooth scrollbar appearance */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

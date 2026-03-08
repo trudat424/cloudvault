@@ -278,9 +278,9 @@ router.get('/:platform/content', async (req, res) => {
     let items = [];
 
     if (req.params.platform === 'youtube') {
-      // YouTube Data API v3
+      // YouTube Data API v3 — Bearer token is sufficient, no API key needed
       const response = await fetch(
-        `https://www.googleapis.com/youtube/v3/search?part=snippet&forMine=true&type=video&maxResults=50&key=${config.GOOGLE_CLIENT_ID}`,
+        'https://www.googleapis.com/youtube/v3/search?part=snippet&forMine=true&type=video&maxResults=50',
         { headers: { 'Authorization': `Bearer ${conn.access_token}` } }
       );
       if (response.ok) {
@@ -291,9 +291,11 @@ router.get('/:platform/content', async (req, res) => {
           thumbnail: item.snippet.thumbnails?.medium?.url || item.snippet.thumbnails?.default?.url,
           date: item.snippet.publishedAt,
           category: item.snippet.title?.includes('#shorts') ? 'short' : 'video',
-          url: `https://www.youtube.com/watch?v=${item.id.videoId}`,
+          url: item.snippet.thumbnails?.high?.url || item.snippet.thumbnails?.medium?.url || item.snippet.thumbnails?.default?.url,
+          sourceUrl: `https://www.youtube.com/watch?v=${item.id.videoId}`,
         }));
       }
+
     } else if (req.params.platform === 'instagram') {
       const response = await fetch(
         `https://graph.instagram.com/me/media?fields=id,caption,media_type,media_url,thumbnail_url,timestamp&access_token=${conn.access_token}`
@@ -309,8 +311,64 @@ router.get('/:platform/content', async (req, res) => {
           url: item.media_url,
         }));
       }
+
+    } else if (req.params.platform === 'tiktok') {
+      // TikTok Video List API v2
+      const response = await fetch('https://open.tiktokapis.com/v2/video/list/', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${conn.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          max_count: 20,
+          fields: 'id,title,cover_image_url,create_time',
+        }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const videos = data.data?.videos || [];
+        items = videos.map(video => ({
+          id: video.id,
+          title: video.title || 'TikTok video',
+          thumbnail: video.cover_image_url || null,
+          date: video.create_time ? new Date(video.create_time * 1000).toISOString() : null,
+          category: 'video',
+          url: video.cover_image_url || null,
+        }));
+      }
+
+    } else if (req.params.platform === 'twitter') {
+      // Twitter/X v2 API — get tweets with media attachments
+      const response = await fetch(
+        'https://api.twitter.com/2/users/me/tweets?max_results=100&expansions=attachments.media_keys&media.fields=url,preview_image_url,type&tweet.fields=created_at',
+        { headers: { 'Authorization': `Bearer ${conn.access_token}` } }
+      );
+      if (response.ok) {
+        const data = await response.json();
+        const tweets = data.data || [];
+        const mediaMap = {};
+        if (data.includes?.media) {
+          data.includes.media.forEach(m => { mediaMap[m.media_key] = m; });
+        }
+        for (const tweet of tweets) {
+          const mediaKeys = tweet.attachments?.media_keys || [];
+          for (const key of mediaKeys) {
+            const media = mediaMap[key];
+            if (media && (media.url || media.preview_image_url)) {
+              items.push({
+                id: `${tweet.id}_${key}`,
+                title: tweet.text ? tweet.text.slice(0, 80) : 'Tweet media',
+                thumbnail: media.preview_image_url || media.url,
+                date: tweet.created_at || null,
+                category: 'tweet',
+                url: media.url || media.preview_image_url,
+              });
+            }
+          }
+        }
+      }
     }
-    // Other platforms return empty for now until configured
 
     res.json({ items, platform: platform.name });
   } catch (err) {
@@ -383,12 +441,13 @@ router.post('/:platform/import', async (req, res) => {
       dbRun(
         `INSERT INTO media (id, account_id, person_name, person_email, type,
           original_name, stored_name, mime_type, size_bytes,
-          has_thumbnail, drive_file_id, source_platform, source_category)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          has_thumbnail, drive_file_id, source_platform, source_category, source_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id, accountId, account.name, account.email || '', type,
           fileName, fileName, mimeType, buffer.length,
           0, s3Key, platform, item.category || 'post',
+          item.sourceUrl || item.url || null,
         ]
       );
 

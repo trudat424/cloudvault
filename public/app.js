@@ -1819,6 +1819,9 @@ function renderBreadcrumb() {
       navigateToFolder(fId || null);
     });
   });
+
+  // Enable breadcrumb items as drop targets
+  attachBreadcrumbDropEvents();
 }
 
 function renderFileBrowser(folders, media) {
@@ -1874,6 +1877,9 @@ function renderFileBrowser(folders, media) {
     filesSection.style.display = 'none';
     emptyState.style.display = 'none';
   }
+
+  // Enable drag-and-drop
+  attachDragDropEvents();
 }
 
 function createFolderCard(folder) {
@@ -1908,6 +1914,163 @@ function attachFolderCardEvents(container) {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       showFolderContextMenu(btn.dataset.folderId, e);
+    });
+  });
+}
+
+// ────────────────────────────
+// DRAG & DROP
+// ────────────────────────────
+function attachDragDropEvents() {
+  const foldersGrid = $('#foldersGrid');
+  const mediaGrid = $('#allMediaGrid');
+
+  // --- Make media cards draggable ---
+  if (mediaGrid) {
+    mediaGrid.querySelectorAll('.media-card[data-id]').forEach(card => {
+      card.setAttribute('draggable', 'true');
+
+      card.addEventListener('dragstart', (e) => {
+        e.stopPropagation();
+        const draggedId = card.dataset.id;
+
+        // Multi-select: if this item is selected, drag all selected items
+        let mediaIds = [];
+        let folderIds = [];
+        if (state.selectedMedia.has(draggedId)) {
+          mediaIds = Array.from(state.selectedMedia);
+        } else {
+          mediaIds = [draggedId];
+        }
+
+        e.dataTransfer.setData('application/json', JSON.stringify({ mediaIds, folderIds }));
+        e.dataTransfer.effectAllowed = 'move';
+        card.classList.add('dragging');
+
+        // Visual: add dragging class to all selected cards
+        if (state.selectedMedia.has(draggedId)) {
+          mediaGrid.querySelectorAll('.media-card.selected').forEach(c => c.classList.add('dragging'));
+        }
+      });
+
+      card.addEventListener('dragend', () => {
+        document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
+        document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+      });
+    });
+  }
+
+  // --- Make folder cards draggable AND drop targets ---
+  if (foldersGrid) {
+    foldersGrid.querySelectorAll('.folder-card[data-folder-id]').forEach(card => {
+      const folderId = card.dataset.folderId;
+
+      // Draggable
+      card.setAttribute('draggable', 'true');
+
+      card.addEventListener('dragstart', (e) => {
+        e.stopPropagation();
+        e.dataTransfer.setData('application/json', JSON.stringify({ mediaIds: [], folderIds: [folderId] }));
+        e.dataTransfer.effectAllowed = 'move';
+        card.classList.add('dragging');
+      });
+
+      card.addEventListener('dragend', () => {
+        document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
+        document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+      });
+
+      // Drop target
+      card.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (!card.classList.contains('dragging')) {
+          card.classList.add('drag-over');
+        }
+      });
+
+      card.addEventListener('dragleave', (e) => {
+        if (!card.contains(e.relatedTarget)) {
+          card.classList.remove('drag-over');
+        }
+      });
+
+      card.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        card.classList.remove('drag-over');
+
+        try {
+          const payload = JSON.parse(e.dataTransfer.getData('application/json'));
+          if (!payload) return;
+
+          if (payload.folderIds && payload.folderIds.includes(folderId)) {
+            showToast('Cannot move a folder into itself', 'error');
+            return;
+          }
+
+          await API.post('/folders/move', {
+            mediaIds: payload.mediaIds || [],
+            folderIds: payload.folderIds || [],
+            targetFolderId: folderId,
+          });
+
+          const total = (payload.mediaIds?.length || 0) + (payload.folderIds?.length || 0);
+          showToast(`Moved ${total} item${total !== 1 ? 's' : ''}`, 'success');
+          state.selectedMedia.clear();
+          navigateToFolder(state.currentFolderId);
+        } catch (err) {
+          console.error('Drop move failed:', err);
+          showToast('Failed to move items', 'error');
+        }
+      });
+    });
+  }
+}
+
+function attachBreadcrumbDropEvents() {
+  const bar = $('#breadcrumbBar');
+  if (!bar) return;
+
+  bar.querySelectorAll('.breadcrumb-item').forEach(item => {
+    const targetFolderId = item.dataset.folderId || null;
+
+    item.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      item.classList.add('drag-over');
+    });
+
+    item.addEventListener('dragleave', (e) => {
+      if (!item.contains(e.relatedTarget)) {
+        item.classList.remove('drag-over');
+      }
+    });
+
+    item.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      item.classList.remove('drag-over');
+
+      try {
+        const payload = JSON.parse(e.dataTransfer.getData('application/json'));
+        if (!payload) return;
+
+        const actualTarget = targetFolderId || null;
+        if (actualTarget === state.currentFolderId) return; // no-op
+
+        await API.post('/folders/move', {
+          mediaIds: payload.mediaIds || [],
+          folderIds: payload.folderIds || [],
+          targetFolderId: actualTarget,
+        });
+
+        const total = (payload.mediaIds?.length || 0) + (payload.folderIds?.length || 0);
+        showToast(`Moved ${total} item${total !== 1 ? 's' : ''}`, 'success');
+        state.selectedMedia.clear();
+        navigateToFolder(state.currentFolderId);
+      } catch (err) {
+        console.error('Breadcrumb drop failed:', err);
+        showToast('Failed to move items', 'error');
+      }
     });
   });
 }
