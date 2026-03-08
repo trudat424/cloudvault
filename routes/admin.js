@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const { queryAll, queryOne, run } = require('../db/database');
-const driveStorage = require('../services/driveStorage');
+const s3Storage = require('../services/s3Storage');
 
 // POST /api/admin/login
 router.post('/login', (req, res) => {
@@ -157,10 +157,10 @@ router.delete('/access/:id', (req, res) => {
 
 // DELETE /api/admin/media/all - clear all media
 router.delete('/media/all', async (req, res) => {
-  const allMedia = queryAll('SELECT id, account_id, drive_file_id, drive_thumb_id FROM media');
+  const allMedia = queryAll('SELECT id, drive_file_id, drive_thumb_id FROM media');
   for (const m of allMedia) {
-    if (m.drive_file_id) await driveStorage.deleteFile(m.account_id, m.drive_file_id);
-    if (m.drive_thumb_id) await driveStorage.deleteFile(m.account_id, m.drive_thumb_id);
+    if (m.drive_file_id) await s3Storage.deleteFile(m.drive_file_id);
+    if (m.drive_thumb_id) await s3Storage.deleteFile(m.drive_thumb_id);
   }
 
   run('DELETE FROM media');
@@ -179,10 +179,10 @@ router.delete('/accounts/all', (req, res) => {
 router.delete('/person/:accountId', async (req, res) => {
   const accountId = req.params.accountId;
 
-  const mediaFiles = queryAll('SELECT id, account_id, drive_file_id, drive_thumb_id FROM media WHERE account_id = ?', [accountId]);
+  const mediaFiles = queryAll('SELECT id, drive_file_id, drive_thumb_id FROM media WHERE account_id = ?', [accountId]);
   for (const m of mediaFiles) {
-    if (m.drive_file_id) await driveStorage.deleteFile(m.account_id, m.drive_file_id);
-    if (m.drive_thumb_id) await driveStorage.deleteFile(m.account_id, m.drive_thumb_id);
+    if (m.drive_file_id) await s3Storage.deleteFile(m.drive_file_id);
+    if (m.drive_thumb_id) await s3Storage.deleteFile(m.drive_thumb_id);
   }
 
   run('DELETE FROM media WHERE account_id = ?', [accountId]);

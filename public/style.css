@@ -842,11 +842,57 @@ img { display: block; max-width: 100%; }
 
 .onboarding-card {
   text-align: center;
-  max-width: 420px;
+  max-width: 460px;
   padding: 48px 40px;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
+  animation: onboardingFadeIn 0.4s ease;
+}
+
+@keyframes onboardingFadeIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.onboarding-step-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  margin-bottom: 32px;
+}
+
+.step-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--border);
+  border: 2px solid var(--border);
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+}
+
+.step-dot.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-glow);
+}
+
+.step-dot.completed {
+  background: var(--green);
+  border-color: var(--green);
+}
+
+.step-line {
+  width: 40px;
+  height: 2px;
+  background: var(--border);
+  transition: background 0.3s ease;
+}
+
+.step-line.completed {
+  background: var(--green);
 }
 
 .onboarding-illustration {
@@ -865,6 +911,35 @@ img { display: block; max-width: 100%; }
   font-size: 0.9rem;
   margin-bottom: 24px;
   line-height: 1.5;
+}
+
+.onboarding-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+}
+
+.onboarding-progress-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 0;
+}
+
+.onboarding-progress-content h2 {
+  margin-bottom: 0;
+}
+
+.onboarding-progress-content .progress-track {
+  width: 100%;
+  max-width: 320px;
+}
+
+.onboarding-progress-content .transfer-count {
+  font-size: 0.8rem;
+  color: var(--text-muted);
 }
 
 .cta-btn {
@@ -888,6 +963,7 @@ img { display: block; max-width: 100%; }
 
 .cta-btn.secondary {
   background: var(--bg-tertiary);
+  color: var(--text-secondary);
   border: 1px solid var(--border);
   box-shadow: none;
 }
@@ -2996,6 +3072,10 @@ img { display: block; max-width: 100%; }
   }
 
   .onboarding-card h2 { font-size: 1.3rem; }
+
+  .step-line { width: 28px; }
+
+  .onboarding-illustration { width: 160px; }
 
   .cta-btn {
     width: 100%;

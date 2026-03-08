@@ -8,7 +8,7 @@ const { queryAll, queryOne, run } = require('../db/database');
 const { generateThumbnail } = require('../services/thumbnail');
 const { extractMetadata } = require('../services/metadata');
 const { STORAGE_LIMIT_GB } = require('../config');
-const driveStorage = require('../services/driveStorage');
+const s3Storage = require('../services/s3Storage');
 
 // Helper: extract accountId from X-Account-Id header or query param
 function getAccountId(req) {
@@ -117,39 +117,37 @@ router.get('/people', (req, res) => {
   })));
 });
 
-// GET /api/media/file/:id - stream original from Google Drive
+// GET /api/media/file/:id - stream original from S3
 router.get('/file/:id', async (req, res) => {
   const row = queryOne('SELECT * FROM media WHERE id = ?', [req.params.id]);
   if (!row) return res.status(404).json({ error: 'Not found' });
   if (!row.drive_file_id) return res.status(404).json({ error: 'File not in cloud storage' });
 
   try {
-    // Use the media OWNER's account for Drive access (files live in the owner's Drive)
-    const { stream, mimeType, size } = await driveStorage.getFileStream(row.account_id, row.drive_file_id);
+    const { stream, mimeType, size } = await s3Storage.getFileStream(row.drive_file_id);
     res.set('Content-Type', mimeType || row.mime_type);
     if (size) res.set('Content-Length', String(size));
     res.set('Cache-Control', 'public, max-age=86400');
     stream.pipe(res);
   } catch (err) {
-    console.error('Drive file stream error:', err.message);
+    console.error('S3 file stream error:', err.message);
     res.status(500).json({ error: 'Failed to load file' });
   }
 });
 
-// GET /api/media/thumb/:id - stream thumbnail from Google Drive
+// GET /api/media/thumb/:id - stream thumbnail from S3
 router.get('/thumb/:id', async (req, res) => {
   const row = queryOne('SELECT * FROM media WHERE id = ?', [req.params.id]);
   if (!row) return res.status(404).json({ error: 'Not found' });
   if (!row.drive_thumb_id) return res.status(404).json({ error: 'Thumbnail not available' });
 
   try {
-    // Use the media OWNER's account for Drive access (files live in the owner's Drive)
-    const { stream } = await driveStorage.getFileStream(row.account_id, row.drive_thumb_id);
+    const { stream } = await s3Storage.getFileStream(row.drive_thumb_id);
     res.set('Content-Type', 'image/jpeg');
     res.set('Cache-Control', 'public, max-age=604800');
     stream.pipe(res);
   } catch (err) {
-    console.error('Drive thumb stream error:', err.message);
+    console.error('S3 thumb stream error:', err.message);
     res.status(500).json({ error: 'Failed to load thumbnail' });
   }
 });
@@ -214,7 +212,7 @@ router.get('/:id', (req, res) => {
   res.json(mapMediaRow(row));
 });
 
-// POST /api/media/upload - upload files to Google Drive (role enforcement)
+// POST /api/media/upload - upload files to S3 (role enforcement)
 router.post('/upload', upload.array('files', 20), async (req, res) => {
   const { account_id } = req.body;
   if (!account_id) return res.status(400).json({ error: 'account_id required' });
@@ -228,12 +226,11 @@ router.post('/upload', upload.array('files', 20), async (req, res) => {
     return res.status(403).json({ error: 'Viewers cannot upload' });
   }
 
-  // Check Drive connection (accountId as first param)
-  if (!driveStorage.isConnected(account_id)) {
+  if (!s3Storage.isConfigured()) {
     for (const file of req.files) {
       try { fs.unlinkSync(file.path); } catch (e) { /* ignore */ }
     }
-    return res.status(401).json({ error: 'Connect Google Drive first to upload files' });
+    return res.status(500).json({ error: 'S3 storage is not configured' });
   }
 
   const account = queryOne('SELECT * FROM accounts WHERE id = ?', [account_id]);
@@ -254,17 +251,17 @@ router.post('/upload', upload.array('files', 20), async (req, res) => {
         meta = await extractMetadata(file.path);
       }
 
-      // Upload original to Google Drive (accountId as first param)
-      const driveFileId = await driveStorage.uploadFile(account_id, file.path, file.originalname, file.mimetype, false);
+      // Upload original to S3
+      const s3FileKey = await s3Storage.uploadFile(account_id, file.path, file.originalname, file.mimetype, false);
 
       // Generate + upload thumbnail for images
       let hasThumbnail = 0;
-      let driveThumbId = null;
+      let s3ThumbKey = null;
       if (!isVideo) {
         const thumbPath = path.join(tmpDir, id + '_thumb.jpg');
         hasThumbnail = (await generateThumbnail(file.path, thumbPath)) ? 1 : 0;
         if (hasThumbnail) {
-          driveThumbId = await driveStorage.uploadFile(account_id, thumbPath, id + '.jpg', 'image/jpeg', true);
+          s3ThumbKey = await s3Storage.uploadFile(account_id, thumbPath, id + '.jpg', 'image/jpeg', true);
           try { fs.unlinkSync(thumbPath); } catch (e) { /* ignore */ }
         }
       }
@@ -287,7 +284,7 @@ router.post('/upload', upload.array('files', 20), async (req, res) => {
           meta.latitude || null, meta.longitude || null,
           meta.cameraMake || null, meta.cameraModel || null,
           hasThumbnail,
-          driveFileId, driveThumbId,
+          s3FileKey, s3ThumbKey,
         ]
       );
 
@@ -314,9 +311,9 @@ router.delete('/:id', async (req, res) => {
     return res.status(403).json({ error: 'Viewers cannot delete' });
   }
 
-  // Delete files from Google Drive (use media owner's accountId)
-  if (row.drive_file_id) await driveStorage.deleteFile(row.account_id, row.drive_file_id);
-  if (row.drive_thumb_id) await driveStorage.deleteFile(row.account_id, row.drive_thumb_id);
+  // Delete files from S3
+  if (row.drive_file_id) await s3Storage.deleteFile(row.drive_file_id);
+  if (row.drive_thumb_id) await s3Storage.deleteFile(row.drive_thumb_id);
 
   run('DELETE FROM media WHERE id = ?', [req.params.id]);
   res.json({ success: true });

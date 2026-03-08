@@ -1,11 +1,10 @@
 /**
- * Google Drive Storage Service (Per-User)
- * Each user has their own Google Drive connection.
- * Tokens are stored on the accounts table, not in global settings.
+ * Google Drive Service (Per-User) — READ-ONLY
+ * Used only for browsing/importing files FROM Google Drive.
+ * All file storage is handled by S3 (see s3Storage.js).
  */
 
 const { google } = require('googleapis');
-const fs = require('fs');
 const { queryOne, run } = require('../db/database');
 const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI } = require('../config');
 
@@ -46,9 +45,6 @@ function getAuthedClient(accountId) {
 
 // ── Drive helpers ────────────────────────────────────────────
 
-// Per-user folder cache: Map<accountId, { folderId, thumbFolderId }>
-const _folderCache = new Map();
-
 async function getDriveInstance(accountId) {
   const client = getAuthedClient(accountId);
   if (!client) return null;
@@ -63,85 +59,10 @@ async function getDriveInstance(accountId) {
   return google.drive({ version: 'v3', auth: client });
 }
 
-async function getOrCreateFolder(drive, folderName, parentId) {
-  let q = `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-  if (parentId) q += ` and '${parentId}' in parents`;
-
-  const search = await drive.files.list({ q, fields: 'files(id, name)', spaces: 'drive' });
-
-  if (search.data.files.length > 0) return search.data.files[0].id;
-
-  const requestBody = { name: folderName, mimeType: 'application/vnd.google-apps.folder' };
-  if (parentId) requestBody.parents = [parentId];
-
-  const folder = await drive.files.create({ requestBody, fields: 'id' });
-  return folder.data.id;
-}
-
-async function getCloudVaultFolderId(drive, accountId) {
-  const cached = _folderCache.get(accountId);
-  if (cached && cached.folderId) return cached.folderId;
-  const folderId = await getOrCreateFolder(drive, 'CloudVault', null);
-  _folderCache.set(accountId, { ...(_folderCache.get(accountId) || {}), folderId });
-  return folderId;
-}
-
-async function getThumbnailsFolderId(drive, accountId) {
-  const cached = _folderCache.get(accountId);
-  if (cached && cached.thumbFolderId) return cached.thumbFolderId;
-  const parentId = await getCloudVaultFolderId(drive, accountId);
-  const thumbFolderId = await getOrCreateFolder(drive, 'thumbnails', parentId);
-  _folderCache.set(accountId, { ...(_folderCache.get(accountId) || {}), thumbFolderId });
-  return thumbFolderId;
-}
-
 // ── Public API ───────────────────────────────────────────────
 
 function isConnected(accountId) {
   return getAuthedClient(accountId) !== null;
-}
-
-async function uploadFile(accountId, localPath, fileName, mimeType, isThumbnail = false) {
-  const drive = await getDriveInstance(accountId);
-  if (!drive) throw new Error('Google Drive not connected');
-
-  const folderId = isThumbnail
-    ? await getThumbnailsFolderId(drive, accountId)
-    : await getCloudVaultFolderId(drive, accountId);
-
-  const result = await drive.files.create({
-    requestBody: { name: fileName, parents: [folderId] },
-    media: { mimeType, body: fs.createReadStream(localPath) },
-    fields: 'id',
-  });
-
-  return result.data.id;
-}
-
-async function getFileStream(accountId, driveFileId) {
-  const drive = await getDriveInstance(accountId);
-  if (!drive) throw new Error('Google Drive not connected');
-
-  const meta = await drive.files.get({ fileId: driveFileId, fields: 'mimeType, size, name' });
-  const response = await drive.files.get({ fileId: driveFileId, alt: 'media' }, { responseType: 'stream' });
-
-  return {
-    stream: response.data,
-    mimeType: meta.data.mimeType,
-    size: parseInt(meta.data.size) || 0,
-    name: meta.data.name,
-  };
-}
-
-async function deleteFile(accountId, driveFileId) {
-  const drive = await getDriveInstance(accountId);
-  if (!drive) return;
-
-  try {
-    await drive.files.delete({ fileId: driveFileId });
-  } catch (err) {
-    if (err.code !== 404) console.error('Drive delete error:', err.message);
-  }
 }
 
 async function getStorageQuota(accountId) {
@@ -159,20 +80,14 @@ async function getStorageQuota(accountId) {
 }
 
 function clearCache(accountId) {
-  if (accountId) _folderCache.delete(accountId);
-  else _folderCache.clear();
+  // No-op — folder cache removed (S3 handles storage now)
 }
 
 module.exports = {
   isConnected,
-  uploadFile,
-  getFileStream,
-  deleteFile,
   getStorageQuota,
   clearCache,
   getDriveInstance,
-  getCloudVaultFolderId,
-  getThumbnailsFolderId,
   getAuthedClient,
   getOAuth2Client,
   saveAccountToken,

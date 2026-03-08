@@ -10,6 +10,7 @@ const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, STORAGE_LIM
 const { generateThumbnail } = require('../services/thumbnail');
 const { extractMetadata } = require('../services/metadata');
 const driveStorage = require('../services/driveStorage');
+const s3Storage = require('../services/s3Storage');
 
 // drive.file = upload/read/delete files the app creates
 // drive.readonly = browse all Drive files (Drive browser feature)
@@ -283,6 +284,75 @@ function getExtFromMime(mimeType) {
   return map[mimeType] || '.jpg';
 }
 
+// ── Shared import helper ─────────────────────────────────
+async function importSingleFile(drive, account, file, tmpDir) {
+  const fileId = uuidv4();
+  const ext = getExtFromMime(file.mimeType) || path.extname(file.name) || '.jpg';
+  const storedName = `${fileId}${ext}`;
+  const tempPath = path.join(tmpDir, storedName);
+
+  // Download file from Drive to temp
+  const response = await drive.files.get(
+    { fileId: file.id, alt: 'media' },
+    { responseType: 'stream' }
+  );
+  await new Promise((resolve, reject) => {
+    const dest = fs.createWriteStream(tempPath);
+    response.data.pipe(dest);
+    dest.on('finish', resolve);
+    dest.on('error', reject);
+  });
+
+  const fileStats = fs.statSync(tempPath);
+  const isVideo = file.mimeType.startsWith('video/');
+  const type = isVideo ? 'video' : 'photo';
+
+  let meta = {};
+  if (!isVideo) {
+    meta = await extractMetadata(tempPath);
+  }
+
+  // Upload to S3
+  const s3FileKey = await s3Storage.uploadFile(account.id, tempPath, storedName, file.mimeType, false);
+
+  // Generate + upload thumbnail
+  let hasThumbnail = 0;
+  let s3ThumbKey = null;
+  if (!isVideo) {
+    const thumbPath = path.join(tmpDir, fileId + '_thumb.jpg');
+    hasThumbnail = (await generateThumbnail(tempPath, thumbPath)) ? 1 : 0;
+    if (hasThumbnail) {
+      s3ThumbKey = await s3Storage.uploadFile(account.id, thumbPath, fileId + '.jpg', 'image/jpeg', true);
+      try { fs.unlinkSync(thumbPath); } catch (e) { /* ignore */ }
+    }
+  }
+
+  // Clean up temp
+  try { fs.unlinkSync(tempPath); } catch (e) { /* ignore */ }
+
+  // Insert into DB
+  run(
+    `INSERT INTO media (id, account_id, person_name, person_email, type,
+      original_name, stored_name, mime_type, size_bytes,
+      width, height, date_taken, latitude, longitude,
+      camera_make, camera_model, has_thumbnail, source_id,
+      drive_file_id, drive_thumb_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      fileId, account.id, account.name, account.email, type,
+      file.name, storedName, file.mimeType, fileStats.size,
+      meta.width || null, meta.height || null,
+      meta.dateTaken || new Date().toISOString(),
+      meta.latitude || null, meta.longitude || null,
+      meta.cameraMake || null, meta.cameraModel || null,
+      hasThumbnail, file.id,
+      s3FileKey, s3ThumbKey,
+    ]
+  );
+
+  return { fileId, size: fileStats.size };
+}
+
 // POST /api/gdrive/import — import Picker-selected files from Google Drive (SSE)
 // Body: { files: [{ id, name, mimeType }] }
 router.post('/import', async (req, res) => {
@@ -376,73 +446,7 @@ router.post('/import', async (req, res) => {
           fileName: file.name,
         });
 
-        // Download file from Drive to temp
-        const fileId = uuidv4();
-        const ext = getExtFromMime(file.mimeType) || path.extname(file.name) || '.jpg';
-        const storedName = `${fileId}${ext}`;
-        const tempPath = path.join(tmpDir, storedName);
-
-        const response = await drive.files.get(
-          { fileId: file.id, alt: 'media' },
-          { responseType: 'stream' }
-        );
-
-        // Write stream to temp file
-        await new Promise((resolve, reject) => {
-          const dest = fs.createWriteStream(tempPath);
-          response.data.pipe(dest);
-          dest.on('finish', resolve);
-          dest.on('error', reject);
-        });
-
-        const fileStats = fs.statSync(tempPath);
-        const isVideo = file.mimeType.startsWith('video/');
-        const type = isVideo ? 'video' : 'photo';
-
-        // Extract metadata for images
-        let meta = {};
-        if (!isVideo) {
-          meta = await extractMetadata(tempPath);
-        }
-
-        // Upload original to CloudVault folder in Drive (accountId as first param)
-        const driveFileId = await driveStorage.uploadFile(accountId, tempPath, file.name, file.mimeType, false);
-
-        // Generate + upload thumbnail for images
-        let hasThumbnail = 0;
-        let driveThumbId = null;
-        if (!isVideo) {
-          const thumbPath = path.join(tmpDir, fileId + '_thumb.jpg');
-          hasThumbnail = (await generateThumbnail(tempPath, thumbPath)) ? 1 : 0;
-          if (hasThumbnail) {
-            driveThumbId = await driveStorage.uploadFile(accountId, thumbPath, fileId + '.jpg', 'image/jpeg', true);
-            try { fs.unlinkSync(thumbPath); } catch (e) { /* ignore */ }
-          }
-        }
-
-        // Clean up temp original
-        try { fs.unlinkSync(tempPath); } catch (e) { /* ignore */ }
-
-        // Insert into media table
-        run(
-          `INSERT INTO media (id, account_id, person_name, person_email, type,
-            original_name, stored_name, mime_type, size_bytes,
-            width, height, date_taken, latitude, longitude,
-            camera_make, camera_model, has_thumbnail, source_id,
-            drive_file_id, drive_thumb_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            fileId, account.id, account.name, account.email, type,
-            file.name, storedName, file.mimeType, fileStats.size,
-            meta.width || null, meta.height || null,
-            meta.dateTaken || new Date().toISOString(),
-            meta.latitude || null, meta.longitude || null,
-            meta.cameraMake || null, meta.cameraModel || null,
-            hasThumbnail, file.id,
-            driveFileId, driveThumbId,
-          ]
-        );
-
+        await importSingleFile(drive, account, file, tmpDir);
         imported++;
       } catch (importErr) {
         console.error(`Failed to import ${file.name}:`, importErr.message);
@@ -478,6 +482,136 @@ router.post('/import', async (req, res) => {
     res.end();
   } catch (err) {
     console.error('Import error:', err.message);
+    sendSSE('error', { message: 'Import failed: ' + err.message });
+    res.end();
+  }
+});
+
+// POST /api/gdrive/import-all — discover and import ALL photos/videos from Drive (SSE)
+router.post('/import-all', async (req, res) => {
+  const accountId = getAccountId(req);
+  if (!accountId) return res.status(400).json({ error: 'X-Account-Id header is required' });
+
+  const client = getAuthedClient(accountId);
+  if (!client) return res.status(401).json({ error: 'Google Drive not connected' });
+
+  // Set up SSE
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+  });
+
+  function sendSSE(event, data) {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  }
+
+  try {
+    // Refresh token if needed
+    const tokenInfo = client.credentials;
+    if (tokenInfo.expiry_date && tokenInfo.expiry_date < Date.now()) {
+      const { credentials } = await client.refreshAccessToken();
+      saveAccountToken(accountId, 'gdrive_access_token', credentials.access_token);
+      saveAccountToken(accountId, 'gdrive_token_expiry', String(credentials.expiry_date || 0));
+    }
+
+    const drive = google.drive({ version: 'v3', auth: client });
+    const account = queryOne('SELECT * FROM accounts WHERE id = ?', [accountId]);
+    if (!account) {
+      sendSSE('error', { message: 'Account not found' });
+      return res.end();
+    }
+
+    // Phase 1: Scan all Drive files (paginated)
+    sendSSE('progress', { phase: 'scanning', message: 'Scanning your Google Drive for photos & videos...' });
+
+    const allFiles = [];
+    let pageToken = null;
+    const q = "(mimeType contains 'image/' or mimeType contains 'video/') and trashed = false";
+
+    do {
+      const params = {
+        q,
+        fields: 'files(id, name, mimeType, size), nextPageToken',
+        pageSize: 100,
+        orderBy: 'modifiedTime desc',
+      };
+      if (pageToken) params.pageToken = pageToken;
+
+      const result = await drive.files.list(params);
+      const files = result.data.files || [];
+      allFiles.push(...files);
+      pageToken = result.data.nextPageToken || null;
+
+      sendSSE('progress', {
+        phase: 'scanning',
+        message: `Found ${allFiles.length} files so far...`,
+        discovered: allFiles.length,
+      });
+    } while (pageToken);
+
+    // Filter out already-imported files
+    const newFiles = allFiles.filter(f => {
+      const existing = queryOne('SELECT id FROM media WHERE source_id = ?', [f.id]);
+      return !existing;
+    });
+
+    const total = newFiles.length;
+    const skipped = allFiles.length - total;
+
+    if (total === 0) {
+      sendSSE('done', {
+        message: allFiles.length === 0
+          ? 'No photos or videos found in your Google Drive'
+          : `All ${allFiles.length} files already imported`,
+        imported: 0, skipped, failed: 0,
+      });
+      return res.end();
+    }
+
+    sendSSE('progress', {
+      phase: 'importing',
+      status: 'importing',
+      message: `Importing ${total} new files (${skipped} already imported)...`,
+      total, current: 0, skipped,
+    });
+
+    // Phase 2: Import each file
+    const tmpDir = ensureTempDir();
+    let imported = 0;
+    let failed = 0;
+
+    for (let i = 0; i < newFiles.length; i++) {
+      const file = newFiles[i];
+      try {
+        sendSSE('progress', {
+          phase: 'importing',
+          status: 'importing',
+          message: `Importing: ${file.name}`,
+          total, current: i + 1, fileName: file.name,
+        });
+
+        await importSingleFile(drive, account, file, tmpDir);
+        imported++;
+      } catch (importErr) {
+        console.error(`Failed to import ${file.name}:`, importErr.message);
+        failed++;
+      }
+    }
+
+    // Record in transfer history
+    run(
+      'INSERT INTO transfer_history (id, type, description, file_count, size_bytes, status) VALUES (?, ?, ?, ?, ?, ?)',
+      [uuidv4(), 'import', `Imported all: ${imported} files from Google Drive`, imported, 0, failed === 0 ? 'complete' : 'partial']
+    );
+
+    sendSSE('done', {
+      message: `Import complete: ${imported} imported, ${failed} failed`,
+      imported, skipped, failed,
+    });
+    res.end();
+  } catch (err) {
+    console.error('Import-all error:', err.message);
     sendSSE('error', { message: 'Import failed: ' + err.message });
     res.end();
   }

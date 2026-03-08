@@ -212,9 +212,17 @@
         </div>
       </div>
 
-      <!-- WELCOME / ONBOARDING (shown when no media) -->
+      <!-- ONBOARDING: 3-step guided flow -->
       <div class="onboarding" id="onboarding">
-        <div class="onboarding-card">
+        <!-- Step 1: Connect Google Drive -->
+        <div class="onboarding-card onboarding-step" id="onboardingStep1">
+          <div class="onboarding-step-indicator">
+            <div class="step-dot active"></div>
+            <div class="step-line"></div>
+            <div class="step-dot"></div>
+            <div class="step-line"></div>
+            <div class="step-dot"></div>
+          </div>
           <div class="onboarding-illustration">
             <svg viewBox="0 0 200 160" fill="none">
               <rect x="30" y="40" width="140" height="90" rx="12" fill="var(--bg-tertiary)" stroke="var(--accent)" stroke-width="1.5"/>
@@ -222,8 +230,56 @@
               <path d="M95 75l4 4 8-8" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </div>
-          <h2>Welcome to CloudVault!</h2>
-          <p>Connect <strong>Google Drive</strong> from the sidebar, then tap <strong>+</strong> to upload your first photos & videos.</p>
+          <h2>Connect Your Google Drive</h2>
+          <p>Link your Google Drive to import your photos and videos into CloudVault.</p>
+          <button class="cta-btn" id="onboardingConnectBtn">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M7.71 3.5L1.15 15l3.43 5.97L11.14 9.47 7.71 3.5zm1.14 0l6.86 11.94H22.85L16 3.5H8.85zM15.29 16.5H1.71L5.14 22.47h13.72l-3.57-5.97z"/></svg>
+            Connect Google Drive
+          </button>
+        </div>
+
+        <!-- Step 2: Import Prompt -->
+        <div class="onboarding-card onboarding-step" id="onboardingStep2" style="display:none;">
+          <div class="onboarding-step-indicator">
+            <div class="step-dot completed"></div>
+            <div class="step-line completed"></div>
+            <div class="step-dot active"></div>
+            <div class="step-line"></div>
+            <div class="step-dot"></div>
+          </div>
+          <div class="onboarding-illustration">
+            <svg viewBox="0 0 200 160" fill="none">
+              <rect x="30" y="30" width="140" height="100" rx="12" fill="var(--bg-tertiary)" stroke="var(--accent)" stroke-width="1.5"/>
+              <rect x="50" y="50" width="40" height="30" rx="4" fill="var(--accent)" fill-opacity="0.2"/>
+              <rect x="100" y="50" width="40" height="30" rx="4" fill="var(--accent)" fill-opacity="0.2"/>
+              <rect x="50" y="90" width="40" height="30" rx="4" fill="var(--accent)" fill-opacity="0.2"/>
+              <rect x="100" y="90" width="40" height="30" rx="4" fill="var(--accent)" fill-opacity="0.2"/>
+            </svg>
+          </div>
+          <h2>Import Your Content</h2>
+          <p>Import all your photos and videos from Google Drive into CloudVault?</p>
+          <div class="onboarding-actions">
+            <button class="cta-btn" id="onboardingImportYes">Yes, Import Everything</button>
+            <button class="cta-btn secondary" id="onboardingImportNo">Skip for Now</button>
+          </div>
+        </div>
+
+        <!-- Step 3: Import Progress -->
+        <div class="onboarding-card onboarding-step" id="onboardingStep3" style="display:none;">
+          <div class="onboarding-step-indicator">
+            <div class="step-dot completed"></div>
+            <div class="step-line completed"></div>
+            <div class="step-dot completed"></div>
+            <div class="step-line completed"></div>
+            <div class="step-dot active"></div>
+          </div>
+          <div class="onboarding-progress-content">
+            <div class="transfer-spinner" id="onboardingSpinner"></div>
+            <h2 id="onboardingProgressTitle">Importing Your Content...</h2>
+            <p id="onboardingProgressStatus">Scanning your Google Drive...</p>
+            <div class="progress-track"><div class="progress-fill" id="onboardingProgressFill"></div></div>
+            <span class="transfer-count" id="onboardingProgressCount"></span>
+          </div>
         </div>
       </div>
 

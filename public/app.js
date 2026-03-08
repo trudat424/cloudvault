@@ -273,10 +273,23 @@ async function loadAppData() {
       await fetchDriveQuota();
     }
 
-    if (getVisibleMedia().length > 0) {
+    // Smart onboarding step detection
+    const hasMedia = getVisibleMedia().length > 0;
+    if (hasMedia) {
+      // Has media — hide onboarding, show media grid
       $('#onboarding').style.display = 'none';
       $('#dashboardMedia').style.display = '';
       renderAllMedia();
+    } else if (!state.gdriveConnected) {
+      // No media, Drive not connected — show Step 1
+      $('#onboarding').style.display = '';
+      $('#dashboardMedia').style.display = 'none';
+      showOnboardingStep(1);
+    } else {
+      // Drive connected but no media — show Step 2
+      $('#onboarding').style.display = '';
+      $('#dashboardMedia').style.display = 'none';
+      showOnboardingStep(2);
     }
   } catch (err) {
     console.error('Failed to load data:', err);
@@ -323,14 +336,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   initSidebarToggle();
   initAdmin();
   initStorageUpgrade();
+  initOnboarding();
 
   // Check for Google Drive OAuth callback
   const gdriveParam = urlParams.get('gdrive');
   if (gdriveParam === 'connected') {
     showToast('Google Drive connected successfully', 'success');
     window.history.replaceState({}, '', '/');
-    // Auto-open Drive browser after connecting
-    setTimeout(() => openDriveBrowser(), 500);
+    // loadAppData() will detect Drive connected + no media → show Step 2 automatically
   } else if (gdriveParam === 'error') {
     const reason = urlParams.get('reason') || 'Unknown error';
     showToast('Google Drive connection failed: ' + reason, 'error');
@@ -474,14 +487,9 @@ function initFabUpload() {
   fab.addEventListener('click', toggleFab);
   backdrop.addEventListener('click', closeFab);
 
-  // "From Device" option — requires Drive connection
+  // "From Device" option — upload directly to S3
   $('#fabDevice').addEventListener('click', () => {
     closeFab();
-    if (!state.gdriveConnected) {
-      showToast('Connect Google Drive first to upload files', 'info');
-      window.location.href = '/api/gdrive/auth?accountId=' + state.currentUser.id;
-      return;
-    }
     fileInput.click();
   });
 
@@ -505,13 +513,6 @@ function initFabUpload() {
 async function startUpload(accountId, files) {
   if (!files || files.length === 0) {
     showToast('No files selected', 'error');
-    return;
-  }
-
-  // Warn if near storage limit
-  if (state.driveQuota && state.driveQuota.percentUsed >= 95) {
-    showToast('Storage almost full! Upgrade for more space.', 'error');
-    openUpgradeModal();
     return;
   }
 
@@ -922,6 +923,136 @@ async function checkForUpgrade() {
     setTimeout(() => {
       btn.textContent = "I've upgraded — check now";
     }, 3000);
+  }
+}
+
+// ────────────────────────────
+// ONBOARDING (3-step guided flow)
+// ────────────────────────────
+function showOnboardingStep(step) {
+  const step1 = $('#onboardingStep1');
+  const step2 = $('#onboardingStep2');
+  const step3 = $('#onboardingStep3');
+  if (step1) step1.style.display = step === 1 ? '' : 'none';
+  if (step2) step2.style.display = step === 2 ? '' : 'none';
+  if (step3) step3.style.display = step === 3 ? '' : 'none';
+}
+
+function initOnboarding() {
+  // Step 1: Connect Google Drive
+  const connectBtn = $('#onboardingConnectBtn');
+  if (connectBtn) {
+    connectBtn.addEventListener('click', () => {
+      if (!state.currentUser) {
+        showToast('Please log in first', 'error');
+        return;
+      }
+      window.location.href = '/api/gdrive/auth?accountId=' + state.currentUser.id;
+    });
+  }
+
+  // Step 2: Import prompt
+  const importYes = $('#onboardingImportYes');
+  if (importYes) {
+    importYes.addEventListener('click', () => {
+      showOnboardingStep(3);
+      startImportAll();
+    });
+  }
+
+  const importNo = $('#onboardingImportNo');
+  if (importNo) {
+    importNo.addEventListener('click', () => {
+      // Skip import — hide onboarding, show empty dashboard
+      $('#onboarding').style.display = 'none';
+      $('#dashboardMedia').style.display = '';
+      showToast('You can import files anytime using the + button or Drive browser', 'info');
+    });
+  }
+}
+
+async function startImportAll() {
+  const titleEl = $('#onboardingProgressTitle');
+  const statusEl = $('#onboardingProgressStatus');
+  const fill = $('#onboardingProgressFill');
+  const countEl = $('#onboardingProgressCount');
+  const spinner = $('#onboardingSpinner');
+
+  titleEl.textContent = 'Importing Your Content...';
+  statusEl.textContent = 'Scanning your Google Drive...';
+  fill.style.width = '0%';
+  countEl.textContent = '';
+
+  try {
+    const response = await fetch('/api/gdrive/import-all', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Account-Id': state.currentUser.id,
+      },
+    });
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      let eventType = '';
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          eventType = line.slice(7).trim();
+        } else if (line.startsWith('data: ')) {
+          try {
+            const eventData = JSON.parse(line.slice(6));
+            if (eventType === 'progress') {
+              if (eventData.phase === 'scanning') {
+                statusEl.textContent = eventData.message || 'Scanning your Google Drive...';
+                countEl.textContent = eventData.found ? `${eventData.found} files found` : '';
+              } else if (eventData.phase === 'importing') {
+                const pct = eventData.total > 0 ? Math.round((eventData.current / eventData.total) * 100) : 0;
+                fill.style.width = pct + '%';
+                statusEl.textContent = eventData.fileName ? `Importing: ${eventData.fileName}` : 'Importing...';
+                countEl.textContent = `${eventData.current} / ${eventData.total} files`;
+              }
+            } else if (eventType === 'done') {
+              fill.style.width = '100%';
+              titleEl.textContent = 'Import Complete!';
+              statusEl.textContent = `Successfully imported ${eventData.imported} files`;
+              countEl.textContent = eventData.skipped > 0 ? `(${eventData.skipped} already existed)` : '';
+              if (spinner) spinner.style.display = 'none';
+
+              // After a brief pause, transition to media grid
+              setTimeout(async () => {
+                await refreshMedia();
+                updateDashboard();
+                if (getVisibleMedia().length > 0) {
+                  $('#onboarding').style.display = 'none';
+                  $('#dashboardMedia').style.display = '';
+                  renderAllMedia();
+                  showToast(`Imported ${eventData.imported} files from Google Drive`, 'success');
+                }
+              }, 1500);
+            } else if (eventType === 'error') {
+              titleEl.textContent = 'Import Failed';
+              statusEl.textContent = eventData.message || 'An error occurred';
+              if (spinner) spinner.style.display = 'none';
+              showToast('Import failed: ' + (eventData.message || 'Unknown error'), 'error');
+            }
+          } catch (_) {}
+        }
+      }
+    }
+  } catch (err) {
+    titleEl.textContent = 'Import Failed';
+    statusEl.textContent = 'Connection lost. Please try again.';
+    if (spinner) spinner.style.display = 'none';
+    showToast('Import connection lost. Please try again.', 'error');
   }
 }
 
