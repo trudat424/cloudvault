@@ -1490,7 +1490,6 @@ function renderAdminPanel() {
   renderAdminStats();
   renderAdminMedia();
   initAdminMediaFilters();
-  renderAdminAccountsList();
 }
 
 function initAdminMediaFilters() {
@@ -1551,29 +1550,13 @@ function renderAdminStats() {
   `;
 }
 
-function renderAdminAccountsList() {
-  const list = $('#adminAccountsList');
-  if (state.connectedAccounts.length === 0) {
-    list.innerHTML = '<div class="empty-state">No accounts.</div>';
-    return;
-  }
-  list.innerHTML = state.connectedAccounts.map(acc => `
-    <div class="admin-account-row">
-      <span class="aa-dot" style="background: var(--green);"></span>
-      <div class="aa-info">
-        <span class="aa-name">${acc.name}</span>
-        <span class="aa-type">${acc.username ? '@' + acc.username : acc.email}</span>
-      </div>
-      <button class="remove-person-btn" onclick="confirmAction('Remove ${acc.name.replace(/'/g, "\\'")}', 'This will remove this account.', () => adminRemoveAccount('${acc.id}'))">Remove</button>
-    </div>
-  `).join('');
-}
-
 async function adminRemoveAccount(accountId) {
   try {
-    await API.del(`/accounts/${accountId}`);
+    await API.del(`/admin/person/${accountId}`);
     await refreshAccounts();
     renderAdminPanel();
+    loadAdminUsers();
+    loadAdminAccess();
     showToast('Account removed', 'success');
   } catch (err) {
     showToast('Failed to remove account', 'error');
@@ -1622,20 +1605,49 @@ function renderAdminUsers(users) {
   const container = document.getElementById('adminUsersList');
   if (!container) return;
 
-  container.innerHTML = users.map(u => `
+  if (users.length === 0) {
+    container.innerHTML = '<p class="empty-state-text">No users registered yet.</p>';
+    return;
+  }
+
+  // Store users for access grant dropdowns
+  state._adminUsers = users;
+  renderAccessGrantForm(users);
+
+  container.innerHTML = users.map(u => {
+    const roleIcon = u.role === 'admin' ? '🛡️' : u.role === 'member' ? '👤' : '👁️';
+    const safeName = u.name.replace(/'/g, "\\'");
+    return `
     <div class="admin-user-row" data-user-id="${u.id}">
       <div class="admin-user-info">
-        <strong>${u.name}</strong> <span class="admin-user-username">@${u.username}</span>
-        <span class="admin-user-drive">${u.gdriveConnected ? '✓ Drive: ' + u.gdriveEmail : '✗ No Drive'}</span>
-        <span class="admin-user-media">${u.mediaCount} files · ${u.totalGB} GB</span>
+        <strong>${roleIcon} ${u.name}</strong> <span class="admin-user-username">@${u.username}</span>
+        <span class="admin-user-meta">${u.mediaCount} files · ${u.totalGB} GB${u.gdriveConnected ? ' · Drive ✓' : ''}</span>
       </div>
-      <select class="admin-role-select" data-user-id="${u.id}" onchange="changeUserRole('${u.id}', this.value)">
-        <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
-        <option value="member" ${u.role === 'member' ? 'selected' : ''}>Member</option>
-        <option value="viewer" ${u.role === 'viewer' ? 'selected' : ''}>Viewer</option>
-      </select>
+      <div class="admin-user-actions">
+        <select class="admin-role-select" data-user-id="${u.id}" onchange="changeUserRole('${u.id}', this.value)">
+          <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
+          <option value="member" ${u.role === 'member' ? 'selected' : ''}>Member</option>
+          <option value="viewer" ${u.role === 'viewer' ? 'selected' : ''}>Viewer</option>
+        </select>
+        <button class="admin-remove-btn" title="Remove user" onclick="confirmAction('Remove ${safeName}', 'This will remove this user and all their media. Cannot be undone.', () => adminRemoveAccount('${u.id}'))">✕</button>
+      </div>
     </div>
-  `).join('');
+  `}).join('');
+}
+
+function renderAccessGrantForm(users) {
+  const form = document.getElementById('accessGrantForm');
+  if (!form || users.length < 2) {
+    if (form) form.innerHTML = '<p class="empty-state-text">Need at least 2 users to set up content sharing.</p>';
+    return;
+  }
+  const options = users.map(u => `<option value="${u.id}">${u.name} (@${u.username})</option>`).join('');
+  form.innerHTML = `
+    <select id="accessViewerSelect"><option value="">Who can view...</option>${options}</select>
+    <span>can see</span>
+    <select id="accessOwnerSelect"><option value="">Whose content...</option>${options}</select>
+    <button class="btn btn-primary" onclick="grantAccess()">Grant</button>
+  `;
 }
 
 async function changeUserRole(userId, newRole) {
@@ -2242,7 +2254,7 @@ async function renderConnectionsView() {
         youtube: '<svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>',
       };
 
-      const statusClass = p.connected ? 'connected' : (p.available ? '' : 'unavailable');
+      const statusClass = p.connected ? 'connected' : '';
 
       html += `
         <div class="connection-card ${statusClass}" data-platform="${p.id}">
@@ -2256,9 +2268,7 @@ async function renderConnectionsView() {
             ${p.connected
               ? `<button class="conn-btn conn-browse" data-platform="${p.id}">Browse</button>
                  <button class="conn-btn conn-disconnect" data-platform="${p.id}">Disconnect</button>`
-              : p.available
-                ? `<button class="conn-btn conn-connect" data-platform="${p.id}">Connect</button>`
-                : `<span class="conn-unavailable">Not configured</span>`
+              : `<button class="conn-btn conn-connect" data-platform="${p.id}" data-available="${p.available}">Connect</button>`
             }
           </div>
         </div>
@@ -2291,6 +2301,11 @@ async function renderConnectionsView() {
     grid.querySelectorAll('.conn-connect').forEach(btn => {
       btn.addEventListener('click', () => {
         const platform = btn.dataset.platform;
+        const available = btn.dataset.available !== 'false';
+        if (!available && platform !== 'gdrive') {
+          showToast(`${platform.charAt(0).toUpperCase() + platform.slice(1)} API keys not configured. Add them to your .env file to enable this connection.`, 'error');
+          return;
+        }
         if (platform === 'gdrive') {
           window.location.href = '/api/gdrive/auth?accountId=' + state.currentUser.id;
         } else {

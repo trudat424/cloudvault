@@ -2669,22 +2669,36 @@ img { display: block; max-width: 100%; }
   color: var(--text-muted);
 }
 
-.admin-user-drive {
-  font-size: 0.72rem;
-  font-weight: 500;
-}
-
-.admin-user-drive.connected {
-  color: var(--green);
-}
-
-.admin-user-drive.disconnected {
-  color: var(--red);
-}
-
-.admin-user-media {
+.admin-user-meta {
   font-size: 0.72rem;
   color: var(--text-muted);
+}
+
+.admin-user-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-remove-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.admin-remove-btn:hover {
+  background: var(--red);
+  color: #fff;
+  border-color: var(--red);
 }
 
 .admin-role-select {
@@ -5059,7 +5073,7 @@ img { display: block; max-width: 100%; }
 }
 
 .connection-card.unavailable {
-  opacity: 0.5;
+  opacity: 0.7;
 }
 
 .connection-icon {
