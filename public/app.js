@@ -58,8 +58,6 @@ const state = {
   lightboxItems: [],
   transferHistory: [],
   adminLoggedIn: false,
-  driveQuota: null, // { limitGB, usageGB, percentUsed }
-  lastKnownLimitGB: null, // for detecting upgrades
 };
 
 function getVisibleMedia() {
@@ -265,30 +263,17 @@ async function loadAppData() {
       state.gdriveEmail = gdrive.email || '';
       state.gdriveName = gdrive.name || '';
       state.gdriveAccessToken = gdrive.accessToken || '';
-      // Update sidebar button to show connected state
-      $('#connectGDriveBtn span').textContent = 'Browse Google Drive';
-
-      // Fetch real Drive quota
-      await fetchDriveQuota();
     }
 
-    // Smart onboarding step detection
+    // Onboarding: show upload-first welcome if no media exists
     const hasMedia = getVisibleMedia().length > 0;
     if (hasMedia) {
-      // Has media — hide onboarding, show media grid
       $('#onboarding').style.display = 'none';
       $('#dashboardMedia').style.display = '';
       renderAllMedia();
-    } else if (!state.gdriveConnected) {
-      // No media, Drive not connected — show Step 1
-      $('#onboarding').style.display = '';
-      $('#dashboardMedia').style.display = 'none';
-      showOnboardingStep(1);
     } else {
-      // Drive connected but no media — show Step 2
       $('#onboarding').style.display = '';
       $('#dashboardMedia').style.display = 'none';
-      showOnboardingStep(2);
     }
   } catch (err) {
     console.error('Failed to load data:', err);
@@ -334,7 +319,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   initSearch();
   initSidebarToggle();
   initAdmin();
-  initStorageUpgrade();
   initOnboarding();
 
   // Check for Google Drive OAuth callback
@@ -394,7 +378,6 @@ function switchView(view) {
 
   if (view === 'dashboard') renderAllMedia();
   if (view === 'sharing') renderSharingView();
-  if (view === 'downloads') renderTransferHistory();
   if (view === 'admin' && state.adminLoggedIn) {
     renderAdminPanel();
     loadAdminUsers();
@@ -554,9 +537,6 @@ async function startUpload(accountId, files) {
 
   await refreshMedia();
   updateDashboard();
-
-  // Refresh Drive quota after upload
-  if (state.gdriveConnected) fetchDriveQuota();
 
   if (totalUploaded > 0) {
     showToast(`Uploaded ${totalUploaded} file${totalUploaded > 1 ? 's' : ''}`, 'success');
@@ -786,7 +766,7 @@ async function handleGDriveDisconnect() {
     state.gdriveEmail = '';
     state.gdriveName = '';
     // Update sidebar button text
-    $('#connectGDriveBtn span').textContent = 'Connect Google Drive';
+    $('#connectGDriveBtn span').textContent = 'Import from Google Drive';
     showToast('Google Drive disconnected', 'info');
   } catch (err) {
     showToast('Failed to disconnect: ' + err.message, 'error');
@@ -794,264 +774,40 @@ async function handleGDriveDisconnect() {
 }
 
 // ────────────────────────────
-// DRIVE QUOTA & STORAGE
+// STORAGE UI
 // ────────────────────────────
-async function fetchDriveQuota() {
-  try {
-    const quota = await API.get('/gdrive/quota');
-    const prevLimit = state.driveQuota ? state.driveQuota.limitGB : null;
-    state.driveQuota = quota;
-
-    // Detect upgrade: limit increased since last check
-    if (prevLimit !== null && quota.limitGB > prevLimit) {
-      const newLabel = formatStorageSize(quota.limitGB);
-      showToast(`Storage upgraded to ${newLabel}!`, 'success');
-    }
-
-    // Save last known limit for cross-session detection
-    const savedLimit = parseFloat(localStorage.getItem('cloudvault-drive-limit') || '0');
-    if (savedLimit > 0 && quota.limitGB > savedLimit) {
-      const newLabel = formatStorageSize(quota.limitGB);
-      showToast(`Storage upgraded to ${newLabel}!`, 'success');
-    }
-    localStorage.setItem('cloudvault-drive-limit', String(quota.limitGB));
-
-    updateStorageUI();
-    return quota;
-  } catch (e) {
-    console.error('Failed to fetch Drive quota:', e);
-    return null;
-  }
-}
-
-function formatStorageSize(gb) {
-  if (gb < 0) return 'Unlimited';
-  if (gb >= 1000) return (gb / 1000).toFixed(gb % 1000 === 0 ? 0 : 1) + ' TB';
-  if (gb >= 100) return Math.round(gb) + ' GB';
-  return gb.toFixed(1) + ' GB';
-}
-
 function updateStorageUI() {
-  const indicator = $('#storageIndicator');
-  const upgradeBtn = $('#storageUpgradeBtn');
-
-  if (state.driveQuota && state.driveQuota.limitGB > 0) {
-    const q = state.driveQuota;
-    const usageLabel = formatStorageSize(q.usageGB);
-    const limitLabel = formatStorageSize(q.limitGB);
-    const pct = Math.min(q.percentUsed, 100);
-
-    $('#storageFill').style.width = pct + '%';
-    $('#storageText').textContent = `${usageLabel} / ${limitLabel}`;
-
-    // Warn when >80% full
-    if (pct >= 80) {
-      indicator.classList.add('warning');
-      upgradeBtn.style.display = '';
-    } else {
-      indicator.classList.remove('warning');
-      upgradeBtn.style.display = '';
-    }
-  } else if (state.driveQuota && state.driveQuota.limitGB < 0) {
-    // Unlimited (e.g. Google Workspace)
-    const usageLabel = formatStorageSize(state.driveQuota.usageGB);
-    $('#storageFill').style.width = '0%';
-    $('#storageText').textContent = `${usageLabel} / Unlimited`;
-    indicator.classList.remove('warning');
-    upgradeBtn.style.display = 'none';
-  } else {
-    // Not connected — show app-level storage
-    const visible = getVisibleMedia();
-    const totalGB = (visible.reduce((sum, m) => sum + m.sizeMB, 0) / 1024).toFixed(1);
-    $('#storageFill').style.width = '0%';
-    $('#storageText').textContent = `${totalGB} GB / 15 GB`;
-    upgradeBtn.style.display = 'none';
-  }
-}
-
-function openUpgradeModal() {
-  const modal = $('#upgradeModal');
-  modal.classList.add('active');
-
-  if (state.driveQuota) {
-    const q = state.driveQuota;
-    const pct = Math.min(q.percentUsed, 100);
-    const usageLabel = formatStorageSize(q.usageGB);
-    const limitLabel = formatStorageSize(q.limitGB);
-    $('#upgradeBarFill').style.width = pct + '%';
-    if (pct >= 80) $('#upgradeBarFill').classList.add('danger');
-    else $('#upgradeBarFill').classList.remove('danger');
-    $('#upgradeUsageText').textContent = `${usageLabel} of ${limitLabel} used (${pct.toFixed(0)}%)`;
-
-    // Highlight current plan
-    const plans = modal.querySelectorAll('.upgrade-plan');
-    plans.forEach(p => p.classList.remove('active'));
-
-    const limitGB = q.limitGB;
-    if (limitGB <= 15) plans[0].classList.add('active');
-    else if (limitGB <= 100) plans[1].classList.add('active');
-    else if (limitGB <= 200) plans[2].classList.add('active');
-    else plans[3].classList.add('active');
-  }
-}
-
-async function checkForUpgrade() {
-  const btn = $('#checkUpgradeBtn');
-  btn.textContent = 'Checking...';
-  btn.classList.add('checking');
-
-  const prevLimit = state.driveQuota ? state.driveQuota.limitGB : 0;
-  const quota = await fetchDriveQuota();
-
-  btn.classList.remove('checking');
-
-  if (quota && quota.limitGB > prevLimit) {
-    btn.textContent = 'Upgrade detected!';
-    const newLabel = formatStorageSize(quota.limitGB);
-    showToast(`Storage upgraded to ${newLabel}!`, 'success');
-
-    // Update plan badges
-    openUpgradeModal(); // refresh display
-
-    // Auto close modal after brief delay
-    setTimeout(() => {
-      $('#upgradeModal').classList.remove('active');
-    }, 2000);
-  } else {
-    btn.textContent = 'No changes detected — try again in a minute';
-    setTimeout(() => {
-      btn.textContent = "I've upgraded — check now";
-    }, 3000);
-  }
+  const visible = getVisibleMedia();
+  const totalGB = (visible.reduce((sum, m) => sum + m.sizeMB, 0) / 1024).toFixed(1);
+  $('#storageText').textContent = `${totalGB} GB used`;
 }
 
 // ────────────────────────────
-// ONBOARDING (3-step guided flow)
+// ONBOARDING (upload-first welcome)
 // ────────────────────────────
-function showOnboardingStep(step) {
-  const step1 = $('#onboardingStep1');
-  const step2 = $('#onboardingStep2');
-  const step3 = $('#onboardingStep3');
-  if (step1) step1.style.display = step === 1 ? '' : 'none';
-  if (step2) step2.style.display = step === 2 ? '' : 'none';
-  if (step3) step3.style.display = step === 3 ? '' : 'none';
-}
-
 function initOnboarding() {
-  // Step 1: Connect Google Drive
-  const connectBtn = $('#onboardingConnectBtn');
-  if (connectBtn) {
-    connectBtn.addEventListener('click', () => {
+  // "Upload Files" button on onboarding card
+  const uploadBtn = $('#onboardingUploadBtn');
+  if (uploadBtn) {
+    uploadBtn.addEventListener('click', () => {
       if (!state.currentUser) {
         showToast('Please log in first', 'error');
         return;
       }
-      window.location.href = '/api/gdrive/auth?accountId=' + state.currentUser.id;
+      $('#fabFileInput').click();
     });
   }
 
-  // Step 2: Import prompt
-  const importYes = $('#onboardingImportYes');
-  if (importYes) {
-    importYes.addEventListener('click', () => {
-      showOnboardingStep(3);
-      startImportAll();
-    });
-  }
-
-  const importNo = $('#onboardingImportNo');
-  if (importNo) {
-    importNo.addEventListener('click', () => {
-      // Skip import — hide onboarding, show empty dashboard
-      $('#onboarding').style.display = 'none';
-      $('#dashboardMedia').style.display = '';
-      showToast('You can import files anytime using the + button or Drive browser', 'info');
-    });
-  }
-}
-
-async function startImportAll() {
-  const titleEl = $('#onboardingProgressTitle');
-  const statusEl = $('#onboardingProgressStatus');
-  const fill = $('#onboardingProgressFill');
-  const countEl = $('#onboardingProgressCount');
-  const spinner = $('#onboardingSpinner');
-
-  titleEl.textContent = 'Importing Your Content...';
-  statusEl.textContent = 'Scanning your Google Drive...';
-  fill.style.width = '0%';
-  countEl.textContent = '';
-
-  try {
-    const response = await fetch('/api/gdrive/import-all', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Account-Id': state.currentUser.id,
-      },
-    });
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop();
-
-      let eventType = '';
-      for (const line of lines) {
-        if (line.startsWith('event: ')) {
-          eventType = line.slice(7).trim();
-        } else if (line.startsWith('data: ')) {
-          try {
-            const eventData = JSON.parse(line.slice(6));
-            if (eventType === 'progress') {
-              if (eventData.phase === 'scanning') {
-                statusEl.textContent = eventData.message || 'Scanning your Google Drive...';
-                countEl.textContent = eventData.found ? `${eventData.found} files found` : '';
-              } else if (eventData.phase === 'importing') {
-                const pct = eventData.total > 0 ? Math.round((eventData.current / eventData.total) * 100) : 0;
-                fill.style.width = pct + '%';
-                statusEl.textContent = eventData.fileName ? `Importing: ${eventData.fileName}` : 'Importing...';
-                countEl.textContent = `${eventData.current} / ${eventData.total} files`;
-              }
-            } else if (eventType === 'done') {
-              fill.style.width = '100%';
-              titleEl.textContent = 'Import Complete!';
-              statusEl.textContent = `Successfully imported ${eventData.imported} files`;
-              countEl.textContent = eventData.skipped > 0 ? `(${eventData.skipped} already existed)` : '';
-              if (spinner) spinner.style.display = 'none';
-
-              // After a brief pause, transition to media grid
-              setTimeout(async () => {
-                await refreshMedia();
-                updateDashboard();
-                if (getVisibleMedia().length > 0) {
-                  $('#onboarding').style.display = 'none';
-                  $('#dashboardMedia').style.display = '';
-                  renderAllMedia();
-                  showToast(`Imported ${eventData.imported} files from Google Drive`, 'success');
-                }
-              }, 1500);
-            } else if (eventType === 'error') {
-              titleEl.textContent = 'Import Failed';
-              statusEl.textContent = eventData.message || 'An error occurred';
-              if (spinner) spinner.style.display = 'none';
-              showToast('Import failed: ' + (eventData.message || 'Unknown error'), 'error');
-            }
-          } catch (_) {}
-        }
+  // "or import from Google Drive" link
+  const driveBtn = $('#onboardingDriveBtn');
+  if (driveBtn) {
+    driveBtn.addEventListener('click', () => {
+      if (!state.currentUser) {
+        showToast('Please log in first', 'error');
+        return;
       }
-    }
-  } catch (err) {
-    titleEl.textContent = 'Import Failed';
-    statusEl.textContent = 'Connection lost. Please try again.';
-    if (spinner) spinner.style.display = 'none';
-    showToast('Import connection lost. Please try again.', 'error');
+      openDriveBrowser();
+    });
   }
 }
 
@@ -1069,32 +825,6 @@ async function updateDashboard() {
   $('#totalStorage').textContent = totalGB + ' GB';
 
   updateStorageUI();
-}
-
-function initStorageUpgrade() {
-  // Upgrade button in sidebar
-  $('#storageUpgradeBtn').addEventListener('click', (e) => {
-    e.preventDefault();
-    openUpgradeModal();
-  });
-
-  // "I've upgraded — check now" button
-  $('#checkUpgradeBtn').addEventListener('click', checkForUpgrade);
-
-  // Also allow clicking the storage indicator itself when in warning state
-  $('#storageIndicator').addEventListener('click', (e) => {
-    if (e.target.closest('.storage-upgrade-btn')) return; // handled above
-    if ($('#storageIndicator').classList.contains('warning')) {
-      openUpgradeModal();
-    }
-  });
-
-  // Periodically re-check quota every 5 minutes (to detect upgrades)
-  setInterval(async () => {
-    if (state.gdriveConnected) {
-      await fetchDriveQuota();
-    }
-  }, 5 * 60 * 1000);
 }
 
 // ────────────────────────────
@@ -1585,7 +1315,6 @@ function initDownloads() {
     else downloadAll();
   });
   $('#downloadZipBtn').addEventListener('click', downloadAll);
-  $('#transferDriveBtn').addEventListener('click', transferAllToDrive);
 }
 
 function downloadSingle(mediaId) {
@@ -1596,7 +1325,6 @@ function downloadSingle(mediaId) {
   a.href = `/api/download/${mediaId}`;
   a.download = item.name;
   a.click();
-  addTransferHistory('download', `Downloaded ${item.name}`, item.sizeMB);
 }
 
 async function downloadSelected() {
@@ -1640,83 +1368,6 @@ async function downloadAll() {
   } catch (err) {
     showToast('Download failed: ' + err.message, 'error');
   }
-}
-
-// ────────────────────────────
-// GOOGLE DRIVE TRANSFER
-// ────────────────────────────
-function transferAllToDrive() {
-  if (!state.gdriveConnected) {
-    showToast('Connect Google Drive first', 'error');
-    return;
-  }
-  const visible = getVisibleMedia();
-  if (visible.length === 0) { showToast('No media to transfer', 'error'); return; }
-  startTransferProgress(visible);
-}
-
-async function startTransferProgress(items) {
-  openModal('transferModal');
-  const fill = $('#transferProgressFill');
-  const countEl = $('#transferCount');
-  const statusEl = $('#transferStatus');
-  const titleEl = $('#transferTitle');
-  titleEl.textContent = 'Transferring to Google Drive...';
-  fill.style.width = '0%';
-  countEl.textContent = `0 / ${items.length} files`;
-  statusEl.textContent = 'Uploading to Google Drive...';
-
-  try {
-    const ids = items.map((m) => m.id);
-    const result = await API.post('/gdrive/transfer', { ids });
-    fill.style.width = '100%';
-    countEl.textContent = `${result.transferred} / ${items.length} files`;
-    statusEl.textContent = 'Complete!';
-    setTimeout(() => {
-      closeModal('transferModal');
-      fill.style.width = '0%';
-      showToast(`${result.transferred} files transferred to Google Drive`, 'success');
-      addTransferHistory('transfer', `Transferred ${result.transferred} files to Google Drive`,
-        items.reduce((sum, m) => sum + m.sizeMB, 0));
-    }, 1000);
-  } catch (err) {
-    closeModal('transferModal');
-    fill.style.width = '0%';
-    showToast('Transfer failed: ' + (err.message || 'Unknown error'), 'error');
-  }
-}
-
-// ────────────────────────────
-// TRANSFER HISTORY
-// ────────────────────────────
-function addTransferHistory(type, description, sizeMB) {
-  state.transferHistory.unshift({
-    id: 'th_' + Date.now(), type, description, sizeMB,
-    date: new Date().toISOString(), status: 'complete',
-  });
-  if (state.currentView === 'downloads') renderTransferHistory();
-}
-
-function renderTransferHistory() {
-  const list = $('#historyList');
-  if (state.transferHistory.length === 0) {
-    list.innerHTML = '<div class="empty-state">No transfers yet</div>';
-    return;
-  }
-  list.innerHTML = state.transferHistory.map((item) => `
-    <div class="history-item">
-      <div class="hi-icon ${item.type}">
-        ${item.type === 'download'
-          ? '<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>'
-          : '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M7.71 3.5L1.15 15l3.43 5.97L11.14 9.47 7.71 3.5z"/></svg>'}
-      </div>
-      <div class="hi-info">
-        <span class="hi-title">${item.description}</span>
-        <span class="hi-meta">${new Date(item.date).toLocaleString()}</span>
-      </div>
-      <span class="hi-status ${item.status}">Complete</span>
-    </div>
-  `).join('');
 }
 
 // ────────────────────────────

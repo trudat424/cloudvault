@@ -125,7 +125,7 @@
       <p class="sidebar-label">Connections</p>
       <button class="connect-btn gdrive-btn" id="connectGDriveBtn">
         <svg viewBox="0 0 24 24" fill="currentColor" width="18"><path d="M7.71 3.5L1.15 15l3.43 5.97L11.14 9.47 7.71 3.5zm1.14 0l6.86 11.94H22.85L16 3.5H8.85zM15.29 16.5H1.71L5.14 22.47h13.72l-3.57-5.97z"/></svg>
-        <span>Connect Google Drive</span>
+        <span>Import from Google Drive</span>
       </button>
     </div>
 
@@ -136,11 +136,7 @@
 
     <div class="sidebar-footer">
       <div class="storage-indicator" id="storageIndicator">
-        <div class="storage-bar"><div class="storage-fill" id="storageFill"></div></div>
-        <div class="storage-row">
-          <span class="storage-text" id="storageText">0 GB / 15 GB</span>
-          <button class="storage-upgrade-btn" id="storageUpgradeBtn" title="Upgrade storage">Upgrade</button>
-        </div>
+        <span class="storage-text" id="storageText">0 GB used</span>
       </div>
     </div>
   </aside>
@@ -212,74 +208,28 @@
         </div>
       </div>
 
-      <!-- ONBOARDING: 3-step guided flow -->
+      <!-- ONBOARDING: Upload-first welcome -->
       <div class="onboarding" id="onboarding">
-        <!-- Step 1: Connect Google Drive -->
-        <div class="onboarding-card onboarding-step" id="onboardingStep1">
-          <div class="onboarding-step-indicator">
-            <div class="step-dot active"></div>
-            <div class="step-line"></div>
-            <div class="step-dot"></div>
-            <div class="step-line"></div>
-            <div class="step-dot"></div>
-          </div>
+        <div class="onboarding-card" id="onboardingWelcome">
           <div class="onboarding-illustration">
             <svg viewBox="0 0 200 160" fill="none">
-              <rect x="30" y="40" width="140" height="90" rx="12" fill="var(--bg-tertiary)" stroke="var(--accent)" stroke-width="1.5"/>
-              <circle cx="100" cy="75" r="20" fill="var(--accent)" fill-opacity="0.15" stroke="var(--accent)" stroke-width="1.5"/>
-              <path d="M95 75l4 4 8-8" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <rect x="30" y="30" width="140" height="100" rx="16" fill="var(--bg-tertiary)" stroke="var(--accent)" stroke-width="1.5"/>
+              <path d="M100 55v30M85 70h30" stroke="var(--accent)" stroke-width="3" stroke-linecap="round"/>
+              <rect x="55" y="95" width="25" height="20" rx="4" fill="var(--accent)" fill-opacity="0.2"/>
+              <rect x="88" y="95" width="25" height="20" rx="4" fill="var(--accent)" fill-opacity="0.15"/>
+              <rect x="120" y="95" width="25" height="20" rx="4" fill="var(--accent)" fill-opacity="0.1"/>
             </svg>
           </div>
-          <h2>Connect Your Google Drive</h2>
-          <p>Link your Google Drive to import your photos and videos into CloudVault.</p>
-          <button class="cta-btn" id="onboardingConnectBtn">
-            <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M7.71 3.5L1.15 15l3.43 5.97L11.14 9.47 7.71 3.5zm1.14 0l6.86 11.94H22.85L16 3.5H8.85zM15.29 16.5H1.71L5.14 22.47h13.72l-3.57-5.97z"/></svg>
-            Connect Google Drive
+          <h2>Welcome to CloudVault</h2>
+          <p>Upload your photos and videos to get started.</p>
+          <button class="cta-btn" id="onboardingUploadBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Upload Files
           </button>
-        </div>
-
-        <!-- Step 2: Import Prompt -->
-        <div class="onboarding-card onboarding-step" id="onboardingStep2" style="display:none;">
-          <div class="onboarding-step-indicator">
-            <div class="step-dot completed"></div>
-            <div class="step-line completed"></div>
-            <div class="step-dot active"></div>
-            <div class="step-line"></div>
-            <div class="step-dot"></div>
-          </div>
-          <div class="onboarding-illustration">
-            <svg viewBox="0 0 200 160" fill="none">
-              <rect x="30" y="30" width="140" height="100" rx="12" fill="var(--bg-tertiary)" stroke="var(--accent)" stroke-width="1.5"/>
-              <rect x="50" y="50" width="40" height="30" rx="4" fill="var(--accent)" fill-opacity="0.2"/>
-              <rect x="100" y="50" width="40" height="30" rx="4" fill="var(--accent)" fill-opacity="0.2"/>
-              <rect x="50" y="90" width="40" height="30" rx="4" fill="var(--accent)" fill-opacity="0.2"/>
-              <rect x="100" y="90" width="40" height="30" rx="4" fill="var(--accent)" fill-opacity="0.2"/>
-            </svg>
-          </div>
-          <h2>Import Your Content</h2>
-          <p>Import all your photos and videos from Google Drive into CloudVault?</p>
-          <div class="onboarding-actions">
-            <button class="cta-btn" id="onboardingImportYes">Yes, Import Everything</button>
-            <button class="cta-btn secondary" id="onboardingImportNo">Skip for Now</button>
-          </div>
-        </div>
-
-        <!-- Step 3: Import Progress -->
-        <div class="onboarding-card onboarding-step" id="onboardingStep3" style="display:none;">
-          <div class="onboarding-step-indicator">
-            <div class="step-dot completed"></div>
-            <div class="step-line completed"></div>
-            <div class="step-dot completed"></div>
-            <div class="step-line completed"></div>
-            <div class="step-dot active"></div>
-          </div>
-          <div class="onboarding-progress-content">
-            <div class="transfer-spinner" id="onboardingSpinner"></div>
-            <h2 id="onboardingProgressTitle">Importing Your Content...</h2>
-            <p id="onboardingProgressStatus">Scanning your Google Drive...</p>
-            <div class="progress-track"><div class="progress-fill" id="onboardingProgressFill"></div></div>
-            <span class="transfer-count" id="onboardingProgressCount"></span>
-          </div>
+          <button class="onboarding-secondary-btn" id="onboardingDriveBtn">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M7.71 3.5L1.15 15l3.43 5.97L11.14 9.47 7.71 3.5zm1.14 0l6.86 11.94H22.85L16 3.5H8.85zM15.29 16.5H1.71L5.14 22.47h13.72l-3.57-5.97z"/></svg>
+            or import from Google Drive
+          </button>
         </div>
       </div>
 
@@ -362,8 +312,8 @@
     <!-- ═══ VIEW: DOWNLOADS ═══ -->
     <section class="view" id="viewDownloads">
       <div class="view-header">
-        <h1 class="view-title">Downloads & Transfers</h1>
-        <p class="view-subtitle">Manage your downloads and Google Drive transfers</p>
+        <h1 class="view-title">Downloads</h1>
+        <p class="view-subtitle">Download your media</p>
       </div>
 
       <div class="download-options">
@@ -374,21 +324,6 @@
           <h3>Download All Media</h3>
           <p>Download everything as a ZIP archive.</p>
           <button class="cta-btn" id="downloadZipBtn">Download ZIP</button>
-        </div>
-        <div class="download-card">
-          <div class="dl-icon gdrive-icon">
-            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7.71 3.5L1.15 15l3.43 5.97L11.14 9.47 7.71 3.5zm1.14 0l6.86 11.94H22.85L16 3.5H8.85zM15.29 16.5H1.71L5.14 22.47h13.72l-3.57-5.97z"/></svg>
-          </div>
-          <h3>Transfer to Google Drive</h3>
-          <p>Move all synced content to your Google Drive.</p>
-          <button class="cta-btn" id="transferDriveBtn">Transfer All</button>
-        </div>
-      </div>
-
-      <div class="transfer-history" id="transferHistory">
-        <h2 class="section-title">Transfer History</h2>
-        <div class="history-list" id="historyList">
-          <div class="empty-state">No transfers yet</div>
         </div>
       </div>
     </section>
@@ -498,13 +433,13 @@
   <div class="fab-container" id="fabContainer">
     <div class="fab-backdrop" id="fabBackdrop"></div>
     <div class="fab-options" id="fabOptions">
-      <button class="fab-option" id="fabGDrive" title="Import from Google Drive">
-        <svg viewBox="0 0 24 24" fill="currentColor" width="22"><path d="M7.71 3.5L1.15 15l3.43 5.97L11.14 9.47 7.71 3.5zm1.14 0l6.86 11.94H22.85L16 3.5H8.85zM15.29 16.5H1.71L5.14 22.47h13.72l-3.57-5.97z"/></svg>
-        <span>Google Drive</span>
-      </button>
       <button class="fab-option" id="fabDevice" title="Upload from this device">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-        <span>From Device</span>
+        <span>Upload</span>
+      </button>
+      <button class="fab-option" id="fabGDrive" title="Import from Google Drive">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="22"><path d="M7.71 3.5L1.15 15l3.43 5.97L11.14 9.47 7.71 3.5zm1.14 0l6.86 11.94H22.85L16 3.5H8.85zM15.29 16.5H1.71L5.14 22.47h13.72l-3.57-5.97z"/></svg>
+        <span>Import from Drive</span>
       </button>
     </div>
     <button class="fab-upload" id="fabUpload" title="Add media">
@@ -578,64 +513,6 @@
         <p id="transferStatus">Preparing files...</p>
         <div class="progress-track"><div class="progress-fill" id="transferProgressFill"></div></div>
         <span class="transfer-count" id="transferCount">0 / 0 files</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- ════════ STORAGE UPGRADE MODAL ════════ -->
-  <div class="modal" id="upgradeModal">
-    <div class="modal-backdrop" onclick="document.getElementById('upgradeModal').classList.remove('active')"></div>
-    <div class="modal-card upgrade-modal-card">
-      <button class="modal-close" onclick="document.getElementById('upgradeModal').classList.remove('active')">
-        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
-      </button>
-      <div class="upgrade-content">
-        <div class="upgrade-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="40" height="40"><path d="M12 16V8m0 0l-3 3m3-3l3 3M3 12a9 9 0 1118 0 9 9 0 01-18 0z"/></svg>
-        </div>
-        <h2>Upgrade Your Storage</h2>
-        <div class="upgrade-current" id="upgradeCurrentUsage">
-          <div class="upgrade-bar"><div class="upgrade-bar-fill" id="upgradeBarFill"></div></div>
-          <span id="upgradeUsageText">Loading...</span>
-        </div>
-        <p class="upgrade-desc">CloudVault uses your Google Drive for storage. Upgrade via Google One to get more space.</p>
-        <div class="upgrade-plans">
-          <div class="upgrade-plan" data-plan="free">
-            <span class="plan-badge free">Current</span>
-            <span class="plan-size">15 GB</span>
-            <span class="plan-price">Free</span>
-          </div>
-          <div class="upgrade-plan" data-plan="basic">
-            <span class="plan-badge">Popular</span>
-            <span class="plan-size">100 GB</span>
-            <span class="plan-price">$1.99/mo</span>
-          </div>
-          <div class="upgrade-plan" data-plan="standard">
-            <span class="plan-size">200 GB</span>
-            <span class="plan-price">$2.99/mo</span>
-          </div>
-          <div class="upgrade-plan" data-plan="premium">
-            <span class="plan-badge">Best Value</span>
-            <span class="plan-size">2 TB</span>
-            <span class="plan-price">$9.99/mo</span>
-          </div>
-        </div>
-        <div class="upgrade-steps">
-          <h3>How to Upgrade</h3>
-          <ol>
-            <li>Visit <a href="https://one.google.com" target="_blank" rel="noopener">one.google.com</a></li>
-            <li>Sign in with the same Google account connected to CloudVault</li>
-            <li>Choose a plan and complete the purchase</li>
-            <li>Come back here — CloudVault will detect your new storage automatically!</li>
-          </ol>
-        </div>
-        <div class="upgrade-actions">
-          <a href="https://one.google.com" target="_blank" rel="noopener" class="btn-upgrade-google">
-            <svg viewBox="0 0 24 24" fill="currentColor" width="18"><path d="M7.71 3.5L1.15 15l3.43 5.97L11.14 9.47 7.71 3.5zm1.14 0l6.86 11.94H22.85L16 3.5H8.85zM15.29 16.5H1.71L5.14 22.47h13.72l-3.57-5.97z"/></svg>
-            Upgrade on Google One
-          </a>
-          <button class="btn-check-upgrade" id="checkUpgradeBtn">I've upgraded — check now</button>
-        </div>
       </div>
     </div>
   </div>
