@@ -39,7 +39,25 @@ function detectPlatform(url) {
 
 // ── Cookie Loader ────────────────────────────────────
 
+let igAccountIndex = 0; // Round-robin counter for Instagram multi-account
+
 function getCookies(platform) {
+  // Instagram multi-account pool: rotate through logged-in scraper accounts
+  if (platform === 'instagram') {
+    try {
+      const accountsRow = queryOne('SELECT value FROM settings WHERE key = ?', ['scraper_accounts_instagram']);
+      if (accountsRow && accountsRow.value) {
+        const accounts = JSON.parse(accountsRow.value);
+        if (Array.isArray(accounts) && accounts.length > 0) {
+          const account = accounts[igAccountIndex % accounts.length];
+          igAccountIndex++;
+          if (account.cookies) return account.cookies;
+        }
+      }
+    } catch (_) {}
+  }
+
+  // Fall back to single cookie string (all platforms, backward compat with manual paste)
   try {
     const row = queryOne('SELECT value FROM settings WHERE key = ?', [`scraper_cookies_${platform}`]);
     return row ? row.value : null;

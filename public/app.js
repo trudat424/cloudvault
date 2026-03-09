@@ -433,14 +433,7 @@ function initSidebarToggle() {
 // MODALS
 // ────────────────────────────
 function initModals() {
-  // Sidebar "Connect Google Drive" button — connect or open browser
-  $('#connectGDriveBtn').addEventListener('click', () => {
-    if (state.gdriveConnected) {
-      openDriveBrowser();
-    } else {
-      window.location.href = '/api/gdrive/auth?accountId=' + state.currentUser.id;
-    }
-  });
+  // Sidebar Google Drive button removed — access via Connections page
 }
 
 function openModal(id) {
@@ -783,8 +776,6 @@ async function handleGDriveDisconnect() {
     state.gdriveConnected = false;
     state.gdriveEmail = '';
     state.gdriveName = '';
-    // Update sidebar button text
-    $('#connectGDriveBtn span').textContent = 'Import from Google Drive';
     showToast('Google Drive disconnected', 'info');
   } catch (err) {
     showToast('Failed to disconnect: ' + err.message, 'error');
@@ -3010,9 +3001,9 @@ async function renderAdminScraperSettings() {
   const container = $('#adminScraperCookies');
   if (!container) return;
 
-  const platforms = [
+  // Platforms that still use the legacy cookie-paste UI
+  const cookiePlatforms = [
     { id: 'youtube', name: 'YouTube', icon: '▶️' },
-    { id: 'instagram', name: 'Instagram', icon: '📷' },
     { id: 'tiktok', name: 'TikTok', icon: '🎵' },
     { id: 'twitter', name: 'Twitter/X', icon: '🐦' },
   ];
@@ -3022,7 +3013,76 @@ async function renderAdminScraperSettings() {
     status = await API.get('/admin/scraper-cookies');
   } catch (_) {}
 
-  container.innerHTML = platforms.map(p => `
+  // Fetch Instagram accounts
+  let igAccounts = [];
+  try {
+    igAccounts = await API.get('/admin/instagram/accounts');
+  } catch (_) {}
+
+  const igConfigured = igAccounts.length > 0 || status.instagram;
+
+  // ── Instagram section (login-based) ──
+  const igHtml = `
+    <div class="scraper-cookie-row" data-platform="instagram">
+      <div class="scraper-cookie-header">
+        <span class="scraper-cookie-label">📷 Instagram</span>
+        <span class="scraper-cookie-status ${igConfigured ? 'configured' : ''}">${
+          igAccounts.length > 0
+            ? '✓ ' + igAccounts.length + ' account' + (igAccounts.length > 1 ? 's' : '')
+            : status.instagram ? '✓ Manual cookies' : '✗ Not set'
+        }</span>
+      </div>
+
+      ${igAccounts.length > 0 ? `
+        <div class="ig-accounts-list">
+          ${igAccounts.map(a => `
+            <div class="ig-account-item">
+              <span class="ig-account-name">@${a.username}</span>
+              <span class="ig-account-date">${a.addedAt ? new Date(a.addedAt).toLocaleDateString() : ''}</span>
+              <button class="ig-account-remove" data-username="${a.username}" title="Remove account">×</button>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+
+      <div class="ig-login-form" id="igScraperLoginForm">
+        <div id="igScraperStep1">
+          <div class="ig-login-inputs">
+            <input type="text" id="igScraperUsername" placeholder="Instagram username" autocomplete="off" />
+            <input type="password" id="igScraperPassword" placeholder="Password" autocomplete="off" />
+            <button class="btn btn-primary" id="igScraperLoginBtn">Add Account</button>
+          </div>
+          <div id="igScraperError" class="ig-login-error" style="display:none;"></div>
+          <p class="ig-login-note">Credentials are sent directly to Instagram and are not stored.</p>
+        </div>
+        <div id="igScraperStep2" style="display:none;">
+          <div class="ig-login-inputs">
+            <input type="text" id="igScraper2FACode" placeholder="6-digit 2FA code" maxlength="8" autocomplete="one-time-code" />
+            <button class="btn btn-primary" id="igScraper2FABtn">Verify</button>
+          </div>
+          <div id="igScraper2FAError" class="ig-login-error" style="display:none;"></div>
+        </div>
+      </div>
+
+      <div class="ig-manual-toggle">
+        <a href="#" id="igManualToggle">Paste cookies manually</a>
+      </div>
+      <div id="igManualSection" style="display:none;">
+        <textarea class="scraper-cookie-input" id="scraperCookie_instagram" placeholder="Paste cookie header string from browser DevTools..."></textarea>
+        <div class="scraper-cookie-actions">
+          <label class="scraper-cookie-file-label">
+            <input type="file" class="scraper-cookie-file" data-platform="instagram" accept=".txt,.cookie,.cookies" style="display:none;" />
+            Upload File
+          </label>
+          <button class="btn btn-primary scraper-cookie-save" data-platform="instagram">Save</button>
+          <button class="btn scraper-cookie-clear" data-platform="instagram" ${!status.instagram ? 'disabled' : ''}>Clear</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // ── Other platforms (legacy cookie-paste) ──
+  const otherHtml = cookiePlatforms.map(p => `
     <div class="scraper-cookie-row" data-platform="${p.id}">
       <div class="scraper-cookie-header">
         <span class="scraper-cookie-label">${p.icon} ${p.name}</span>
@@ -3039,6 +3099,50 @@ async function renderAdminScraperSettings() {
       </div>
     </div>
   `).join('');
+
+  container.innerHTML = igHtml + otherHtml;
+
+  // ── Instagram login event listeners ──
+
+  const igLoginBtn = $('#igScraperLoginBtn');
+  if (igLoginBtn) {
+    igLoginBtn.addEventListener('click', submitInstagramScraperLogin);
+  }
+
+  const ig2FABtn = $('#igScraper2FABtn');
+  if (ig2FABtn) {
+    ig2FABtn.addEventListener('click', submitInstagramScraper2FA);
+  }
+
+  // Instagram account remove buttons
+  container.querySelectorAll('.ig-account-remove').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const username = btn.dataset.username;
+      try {
+        await API.del(`/admin/instagram/account/${username}`);
+        showToast(`Removed @${username}`, 'info');
+        renderAdminScraperSettings();
+      } catch (err) {
+        showToast('Failed to remove account', 'error');
+      }
+    });
+  });
+
+  // Manual toggle
+  const manualToggle = $('#igManualToggle');
+  if (manualToggle) {
+    manualToggle.addEventListener('click', (e) => {
+      e.preventDefault();
+      const section = $('#igManualSection');
+      if (section) {
+        const shown = section.style.display !== 'none';
+        section.style.display = shown ? 'none' : 'block';
+        manualToggle.textContent = shown ? 'Paste cookies manually' : 'Hide manual cookie paste';
+      }
+    });
+  }
+
+  // ── Legacy cookie save/clear/file listeners (all platforms including instagram manual) ──
 
   container.querySelectorAll('.scraper-cookie-save').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -3089,6 +3193,92 @@ async function renderAdminScraperSettings() {
       e.target.value = '';
     });
   });
+}
+
+// ── Instagram scraper login functions ──
+
+let _igScraper2FAState = {};
+
+async function submitInstagramScraperLogin() {
+  const username = $('#igScraperUsername')?.value?.trim();
+  const password = $('#igScraperPassword')?.value;
+  const errorEl = $('#igScraperError');
+  const btn = $('#igScraperLoginBtn');
+
+  if (!username || !password) {
+    if (errorEl) { errorEl.textContent = 'Username and password required'; errorEl.style.display = 'block'; }
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Logging in...';
+  if (errorEl) errorEl.style.display = 'none';
+
+  try {
+    const result = await API.post('/admin/instagram/login', { username, password });
+
+    if (result.success) {
+      showToast(`Added @${result.username} as scraper account`, 'success');
+      renderAdminScraperSettings();
+      return;
+    }
+
+    if (result.twoFactorRequired) {
+      _igScraper2FAState = { username: result.username, identifier: result.identifier };
+      const step1 = $('#igScraperStep1');
+      const step2 = $('#igScraperStep2');
+      if (step1) step1.style.display = 'none';
+      if (step2) step2.style.display = 'block';
+      showToast(`2FA code required (${result.method === 'totp' ? 'authenticator app' : 'SMS'})`, 'info');
+      return;
+    }
+
+    if (errorEl) { errorEl.textContent = result.error || 'Login failed'; errorEl.style.display = 'block'; }
+  } catch (err) {
+    const msg = err.error || err.message || 'Login failed';
+    if (errorEl) { errorEl.textContent = msg; errorEl.style.display = 'block'; }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Add Account';
+  }
+}
+
+async function submitInstagramScraper2FA() {
+  const code = $('#igScraper2FACode')?.value?.trim();
+  const errorEl = $('#igScraper2FAError');
+  const btn = $('#igScraper2FABtn');
+
+  if (!code) {
+    if (errorEl) { errorEl.textContent = 'Enter your 2FA code'; errorEl.style.display = 'block'; }
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Verifying...';
+  if (errorEl) errorEl.style.display = 'none';
+
+  try {
+    const result = await API.post('/admin/instagram/verify-2fa', {
+      username: _igScraper2FAState.username,
+      code,
+      identifier: _igScraper2FAState.identifier,
+    });
+
+    if (result.success) {
+      showToast(`Added @${result.username} as scraper account`, 'success');
+      _igScraper2FAState = {};
+      renderAdminScraperSettings();
+      return;
+    }
+
+    if (errorEl) { errorEl.textContent = result.error || '2FA verification failed'; errorEl.style.display = 'block'; }
+  } catch (err) {
+    const msg = err.error || err.message || '2FA verification failed';
+    if (errorEl) { errorEl.textContent = msg; errorEl.style.display = 'block'; }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Verify';
+  }
 }
 
 function parseNetscapeCookieFile(text) {

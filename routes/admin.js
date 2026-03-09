@@ -202,6 +202,139 @@ router.delete('/scraper-cookies/:platform', (req, res) => {
   res.json({ success: true });
 });
 
+// ── Instagram Login (Multi-Account) ──────────────────
+
+const instagramAuth = require('../services/instagramAuth');
+
+// Helper: read/write the scraper accounts JSON array
+function getInstagramAccounts() {
+  try {
+    const row = queryOne('SELECT value FROM settings WHERE key = ?', ['scraper_accounts_instagram']);
+    if (row && row.value) return JSON.parse(row.value);
+  } catch (_) {}
+  return [];
+}
+
+function saveInstagramAccounts(accounts) {
+  const key = 'scraper_accounts_instagram';
+  const value = JSON.stringify(accounts);
+  const existing = queryOne('SELECT key FROM settings WHERE key = ?', [key]);
+  if (existing) {
+    run('UPDATE settings SET value = ? WHERE key = ?', [value, key]);
+  } else {
+    run('INSERT INTO settings (key, value) VALUES (?, ?)', [key, value]);
+  }
+}
+
+// POST /api/admin/instagram/login — start Instagram login
+router.post('/instagram/login', async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password required' });
+  }
+
+  try {
+    const result = await instagramAuth.login(username, password);
+
+    if (result.success) {
+      // Add to accounts array (replace if same username exists)
+      const accounts = getInstagramAccounts();
+      const idx = accounts.findIndex(a => a.username === username);
+      const account = {
+        username: result.username,
+        userId: result.userId || '',
+        cookies: result.cookies,
+        addedAt: new Date().toISOString(),
+      };
+
+      if (idx >= 0) {
+        accounts[idx] = account;
+      } else {
+        accounts.push(account);
+      }
+
+      saveInstagramAccounts(accounts);
+      return res.json({ success: true, username: result.username, totalAccounts: accounts.length });
+    }
+
+    if (result.twoFactorRequired) {
+      return res.json({
+        twoFactorRequired: true,
+        identifier: result.identifier,
+        method: result.method,
+        username: result.username,
+      });
+    }
+
+    return res.status(400).json({ error: result.error || 'Login failed' });
+  } catch (err) {
+    console.error('Instagram login endpoint error:', err);
+    return res.status(500).json({ error: 'Internal server error during login' });
+  }
+});
+
+// POST /api/admin/instagram/verify-2fa — complete 2FA verification
+router.post('/instagram/verify-2fa', async (req, res) => {
+  const { username, code, identifier } = req.body;
+  if (!username || !code) {
+    return res.status(400).json({ error: 'Username and 2FA code required' });
+  }
+
+  try {
+    const result = await instagramAuth.verify2FA(username, code, identifier);
+
+    if (result.success) {
+      const accounts = getInstagramAccounts();
+      const idx = accounts.findIndex(a => a.username === username);
+      const account = {
+        username: result.username,
+        userId: result.userId || '',
+        cookies: result.cookies,
+        addedAt: new Date().toISOString(),
+      };
+
+      if (idx >= 0) {
+        accounts[idx] = account;
+      } else {
+        accounts.push(account);
+      }
+
+      saveInstagramAccounts(accounts);
+      return res.json({ success: true, username: result.username, totalAccounts: accounts.length });
+    }
+
+    return res.status(400).json({ error: result.error || '2FA verification failed' });
+  } catch (err) {
+    console.error('Instagram 2FA endpoint error:', err);
+    return res.status(500).json({ error: 'Internal server error during 2FA' });
+  }
+});
+
+// GET /api/admin/instagram/accounts — list scraper accounts (without cookie values)
+router.get('/instagram/accounts', (req, res) => {
+  const accounts = getInstagramAccounts();
+  res.json(accounts.map(a => ({
+    username: a.username,
+    userId: a.userId,
+    addedAt: a.addedAt,
+    hasCookies: !!(a.cookies),
+  })));
+});
+
+// DELETE /api/admin/instagram/account/:username — remove a scraper account
+router.delete('/instagram/account/:username', (req, res) => {
+  const { username } = req.params;
+  const accounts = getInstagramAccounts();
+  const filtered = accounts.filter(a => a.username !== username);
+
+  if (filtered.length === accounts.length) {
+    return res.status(404).json({ error: 'Account not found' });
+  }
+
+  saveInstagramAccounts(filtered);
+  res.json({ success: true, remaining: filtered.length });
+});
+
 // ── Cleanup Endpoints ────────────────────────────────
 
 // DELETE /api/admin/media/all - clear all media
