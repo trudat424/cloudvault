@@ -2553,7 +2553,7 @@ async function importSocialContent(platform, items) {
 function openUrlImportModal(platform) {
   const modal = $('#urlImportModal');
   if (!modal) return;
-  modal.style.display = '';
+  modal.classList.add('active');
   document.body.style.overflow = 'hidden';
 
   const input = $('#urlImportInput');
@@ -2586,7 +2586,7 @@ function openUrlImportModal(platform) {
 
 function closeUrlImportModal() {
   const modal = $('#urlImportModal');
-  if (modal) modal.style.display = 'none';
+  if (modal) modal.classList.remove('active');
   document.body.style.overflow = '';
 }
 
