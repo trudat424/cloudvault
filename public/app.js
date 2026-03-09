@@ -2285,6 +2285,14 @@ async function renderConnectionsView() {
         }
       }
 
+      // Platform-specific example URLs
+      const exampleUrls = {
+        youtube: 'youtube.com/watch?v=...',
+        instagram: 'instagram.com/p/... or /reel/...',
+        tiktok: 'tiktok.com/@user/video/...',
+        twitter: 'x.com/user/status/...',
+      };
+
       html += `
         <div class="connection-card ${statusClass}" data-platform="${p.id}">
           <div class="connection-icon">${iconMap[p.id] || ''}</div>
@@ -2295,6 +2303,12 @@ async function renderConnectionsView() {
           </div>
           <div class="connection-actions">
             ${actions}
+          </div>
+          <div class="conn-quick-import" data-platform="${p.id}">
+            <input type="text" class="conn-quick-input" placeholder="${exampleUrls[p.id] || 'Paste URL...'}" data-platform="${p.id}" />
+            <button class="conn-quick-btn" data-platform="${p.id}" title="Import">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+            </button>
           </div>
         </div>
       `;
@@ -2381,6 +2395,33 @@ async function renderConnectionsView() {
           }
         });
       });
+    });
+
+    // Quick import inputs (inline URL paste)
+    grid.querySelectorAll('.conn-quick-input').forEach(input => {
+      const quickBtn = input.parentElement.querySelector('.conn-quick-btn');
+
+      const handleQuickImport = () => {
+        const url = input.value.trim();
+        if (!url) return;
+        openUrlImportModal(input.dataset.platform);
+        setTimeout(() => {
+          const modalInput = $('#urlImportInput');
+          if (modalInput) {
+            modalInput.value = url;
+            input.value = '';
+            fetchUrlPreview();
+          }
+        }, 150);
+      };
+
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') handleQuickImport();
+      });
+      input.addEventListener('paste', () => {
+        setTimeout(handleQuickImport, 100);
+      });
+      quickBtn.addEventListener('click', handleQuickImport);
     });
 
   } catch (err) {
@@ -2640,9 +2681,25 @@ async function fetchUrlPreview() {
     const platformIcons = { youtube: '▶️', instagram: '📷', tiktok: '🎵', twitter: '🐦' };
     const platformNames = { youtube: 'YouTube', instagram: 'Instagram', tiktok: 'TikTok', twitter: 'Twitter/X' };
 
+    const isLimited = item.extractionQuality === 'limited';
+    const isBasic = item.extractionQuality === 'basic';
+
+    let warningHtml = '';
+    if (isLimited && item.limitedReason) {
+      warningHtml = `<div class="url-preview-warning">${item.limitedReason}</div>`;
+    } else if (isLimited) {
+      warningHtml = `<div class="url-preview-warning">Limited preview available. The content may still import successfully.</div>`;
+    }
+
+    // For YouTube, always show import. For others, show even if limited (saves as link reference)
+    const canImport = item.url || item.thumbnail || item.platform === 'youtube';
+    const importLabel = canImport ? 'Import to CloudVault' : 'Save Link to CloudVault';
+
     preview.innerHTML = `
-      <div class="url-preview-card">
-        ${item.thumbnail ? `<img class="url-preview-thumb" src="${item.thumbnail}" alt="" />` : '<div class="url-preview-thumb-placeholder">No preview</div>'}
+      <div class="url-preview-card ${isLimited ? 'url-preview-limited' : ''}">
+        ${item.thumbnail
+          ? `<img class="url-preview-thumb" src="${item.thumbnail}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><div class="url-preview-thumb-placeholder" style="display:none">No preview</div>`
+          : `<div class="url-preview-thumb-placeholder">${platformIcons[item.platform] || '🔗'}</div>`}
         <div class="url-preview-info">
           <span class="url-preview-platform">${platformIcons[item.platform] || '🔗'} ${platformNames[item.platform] || item.platform}</span>
           <h4 class="url-preview-title">${item.title || 'Untitled'}</h4>
@@ -2650,6 +2707,7 @@ async function fetchUrlPreview() {
           ${item.category ? `<span class="url-preview-category">${item.category}</span>` : ''}
         </div>
       </div>
+      ${warningHtml}
     `;
     preview.style.display = '';
     actions.style.display = '';
@@ -2657,7 +2715,9 @@ async function fetchUrlPreview() {
     state._urlImportItem = item;
     state._urlImportUrl = url;
 
-    $('#urlImportConfirmBtn').onclick = () => confirmUrlImport();
+    const confirmBtn = $('#urlImportConfirmBtn');
+    confirmBtn.textContent = importLabel;
+    confirmBtn.onclick = () => confirmUrlImport();
 
   } catch (err) {
     fetchBtn.textContent = 'Fetch';

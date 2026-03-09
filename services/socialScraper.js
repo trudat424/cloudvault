@@ -28,8 +28,6 @@ function detectPlatform(url) {
   for (const [platform, pattern] of Object.entries(URL_PATTERNS)) {
     const match = cleaned.match(pattern);
     if (match) {
-      // For Twitter, match[2] is the status ID
-      // For TikTok short URLs, match[2] is the short code
       const id = platform === 'twitter' ? match[2] :
                  platform === 'tiktok'  ? (match[1] || match[2]) :
                  match[1];
@@ -41,11 +39,6 @@ function detectPlatform(url) {
 
 // ── Cookie Loader ────────────────────────────────────
 
-/**
- * Load scraper cookies for a platform from the settings table
- * @param {string} platform
- * @returns {string|null} Cookie header string
- */
 function getCookies(platform) {
   try {
     const row = queryOne('SELECT value FROM settings WHERE key = ?', [`scraper_cookies_${platform}`]);
@@ -55,12 +48,9 @@ function getCookies(platform) {
   }
 }
 
-/**
- * Build fetch headers with optional cookies
- */
 function buildHeaders(platform, extra = {}) {
   const headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     'Accept-Language': 'en-US,en;q=0.9',
     ...extra,
@@ -78,7 +68,6 @@ function buildHeaders(platform, extra = {}) {
 
 async function extractYouTube(url, videoId) {
   try {
-    // Try ytdl-core first for rich metadata
     const ytdl = require('@ybd-project/ytdl-core');
     const cookies = getCookies('youtube');
 
@@ -107,10 +96,10 @@ async function extractYouTube(url, videoId) {
       author: details.author?.name || details.ownerChannelName || '',
       viewCount: parseInt(details.viewCount || '0'),
       hasVideo: true,
+      extractionQuality: 'full',
     };
   } catch (err) {
     console.error('ytdl-core extraction failed:', err.message);
-    // Fallback: use YouTube oEmbed
     return await extractYouTubeOEmbed(videoId);
   }
 }
@@ -133,9 +122,9 @@ async function extractYouTubeOEmbed(videoId) {
       platform: 'youtube',
       author: data.author_name || '',
       hasVideo: true,
+      extractionQuality: 'good',
     };
   } catch (err) {
-    // Last resort fallback with just the thumbnail
     return {
       id: videoId,
       title: 'YouTube Video',
@@ -146,6 +135,7 @@ async function extractYouTubeOEmbed(videoId) {
       sourceUrl: `https://www.youtube.com/watch?v=${videoId}`,
       platform: 'youtube',
       hasVideo: true,
+      extractionQuality: 'basic',
     };
   }
 }
@@ -153,120 +143,137 @@ async function extractYouTubeOEmbed(videoId) {
 // ── Instagram Extractor ──────────────────────────────
 
 async function extractInstagram(url, postId) {
-  // Try oEmbed first (works without auth for public posts)
+  const hasCookies = !!getCookies('instagram');
+
+  // Strategy 1: oEmbed (requires auth since 2024, may work with cookies)
   try {
     const oembedUrl = `https://api.instagram.com/oembed/?url=https://www.instagram.com/p/${postId}/&format=json`;
     const res = await fetch(oembedUrl, {
       headers: buildHeaders('instagram'),
+      redirect: 'follow',
     });
 
     if (res.ok) {
       const data = await res.json();
-      return {
-        id: postId,
-        title: data.title || data.author_name ? `${data.author_name}'s post` : 'Instagram Post',
-        thumbnail: data.thumbnail_url || null,
-        date: null,
-        category: url.includes('/reel') ? 'reel' : 'post',
-        url: data.thumbnail_url || null,
-        sourceUrl: `https://www.instagram.com/p/${postId}/`,
-        platform: 'instagram',
-        author: data.author_name || '',
-        hasVideo: url.includes('/reel'),
-      };
+      if (data.title || data.author_name || data.thumbnail_url) {
+        return {
+          id: postId,
+          title: data.title || (data.author_name ? `${data.author_name}'s post` : 'Instagram Post'),
+          thumbnail: data.thumbnail_url || null,
+          date: null,
+          category: url.includes('/reel') ? 'reel' : 'post',
+          url: data.thumbnail_url || null,
+          sourceUrl: `https://www.instagram.com/p/${postId}/`,
+          platform: 'instagram',
+          author: data.author_name || '',
+          hasVideo: url.includes('/reel'),
+          extractionQuality: 'good',
+        };
+      }
     }
   } catch (err) {
     console.error('Instagram oEmbed failed:', err.message);
   }
 
-  // Fallback: try scraping the page with cookies
-  try {
-    const headers = buildHeaders('instagram');
-    const pageRes = await fetch(`https://www.instagram.com/p/${postId}/?__a=1&__d=dis`, { headers });
+  // Strategy 2: API endpoint with cookies (requires admin cookies)
+  if (hasCookies) {
+    try {
+      const headers = buildHeaders('instagram');
+      const pageRes = await fetch(`https://www.instagram.com/p/${postId}/?__a=1&__d=dis`, { headers });
 
-    if (pageRes.ok) {
-      const text = await pageRes.text();
-      try {
-        const data = JSON.parse(text);
-        const item = data.graphql?.shortcode_media || data.items?.[0];
-        if (item) {
-          return {
-            id: postId,
-            title: item.edge_media_to_caption?.edges?.[0]?.node?.text?.slice(0, 100) || item.caption?.text?.slice(0, 100) || 'Instagram Post',
-            thumbnail: item.display_url || item.thumbnail_src || item.image_versions2?.candidates?.[0]?.url || null,
-            date: item.taken_at_timestamp ? new Date(item.taken_at_timestamp * 1000).toISOString() : null,
-            category: item.is_video ? 'reel' : 'post',
-            url: item.video_url || item.display_url || item.image_versions2?.candidates?.[0]?.url || null,
-            sourceUrl: `https://www.instagram.com/p/${postId}/`,
-            platform: 'instagram',
-            author: item.owner?.username || '',
-            hasVideo: !!item.is_video,
-          };
-        }
-      } catch (_) {
-        // Not JSON, try extracting from HTML
+      if (pageRes.ok) {
+        const text = await pageRes.text();
+        try {
+          const data = JSON.parse(text);
+          const item = data.graphql?.shortcode_media || data.items?.[0];
+          if (item) {
+            return {
+              id: postId,
+              title: item.edge_media_to_caption?.edges?.[0]?.node?.text?.slice(0, 100) || item.caption?.text?.slice(0, 100) || 'Instagram Post',
+              thumbnail: item.display_url || item.thumbnail_src || item.image_versions2?.candidates?.[0]?.url || null,
+              date: item.taken_at_timestamp ? new Date(item.taken_at_timestamp * 1000).toISOString() : null,
+              category: item.is_video ? 'reel' : 'post',
+              url: item.video_url || item.display_url || item.image_versions2?.candidates?.[0]?.url || null,
+              sourceUrl: `https://www.instagram.com/p/${postId}/`,
+              platform: 'instagram',
+              author: item.owner?.username || '',
+              hasVideo: !!item.is_video,
+              extractionQuality: 'full',
+            };
+          }
+        } catch (_) {}
       }
+    } catch (err) {
+      console.error('Instagram API scrape failed:', err.message);
     }
-  } catch (err) {
-    console.error('Instagram page scrape failed:', err.message);
   }
 
-  // Minimal fallback
+  // Strategy 3: Extract username from URL if possible
+  const usernameMatch = url.match(/instagram\.com\/([^\/]+)\//);
+  const username = (usernameMatch && !['p', 'reel', 'reels', 'tv', 'stories'].includes(usernameMatch[1]))
+    ? usernameMatch[1] : '';
+
+  // Return with limited data but useful metadata
   return {
     id: postId,
-    title: 'Instagram Post',
+    title: username ? `@${username}'s post` : 'Instagram Post',
     thumbnail: null,
     date: null,
     category: url.includes('/reel') ? 'reel' : 'post',
     url: null,
     sourceUrl: `https://www.instagram.com/p/${postId}/`,
     platform: 'instagram',
+    author: username || '',
     hasVideo: url.includes('/reel'),
+    extractionQuality: 'limited',
+    limitedReason: hasCookies
+      ? 'Instagram blocked the request. Try updating your scraper cookies in Admin settings.'
+      : 'Instagram requires authentication. Add scraper cookies in Admin settings for full previews.',
   };
 }
 
 // ── TikTok Extractor ─────────────────────────────────
 
 async function extractTikTok(url, videoId) {
-  // Try oEmbed first (reliable, returns thumbnail)
+  // Strategy 1: oEmbed (most reliable)
   try {
-    const cleanUrl = url.includes('vm.tiktok.com')
-      ? url
-      : `https://www.tiktok.com/@placeholder/video/${videoId}`;
-
-    const oembedUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(cleanUrl)}`;
-    const res = await fetch(oembedUrl);
+    // Use the original URL directly for oEmbed - it's more reliable than constructing one
+    const oembedUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}`;
+    const res = await fetch(oembedUrl, { signal: AbortSignal.timeout(8000) });
 
     if (res.ok) {
       const data = await res.json();
-      return {
-        id: videoId,
-        title: data.title || 'TikTok Video',
-        thumbnail: data.thumbnail_url || null,
-        date: null,
-        category: 'video',
-        url: data.thumbnail_url || null, // oEmbed doesn't give video URL
-        sourceUrl: url,
-        platform: 'tiktok',
-        author: data.author_name || data.author_unique_id || '',
-        hasVideo: true,
-      };
+      if (data.title || data.thumbnail_url) {
+        return {
+          id: videoId,
+          title: data.title || 'TikTok Video',
+          thumbnail: data.thumbnail_url || null,
+          date: null,
+          category: 'video',
+          url: data.thumbnail_url || null, // oEmbed doesn't expose direct video URL
+          sourceUrl: url,
+          platform: 'tiktok',
+          author: data.author_name || data.author_unique_id || '',
+          hasVideo: true,
+          extractionQuality: 'good',
+        };
+      }
     }
   } catch (err) {
     console.error('TikTok oEmbed failed:', err.message);
   }
 
-  // Try scraping the page with cookies
+  // Strategy 2: Scrape page for embedded JSON data
   try {
     const headers = buildHeaders('tiktok');
     const pageRes = await fetch(url, {
       headers,
       redirect: 'follow',
+      signal: AbortSignal.timeout(10000),
     });
 
     if (pageRes.ok) {
       const html = await pageRes.text();
-      // Extract from SIGI_STATE or __UNIVERSAL_DATA_FOR_REHYDRATION__
       const stateMatch = html.match(/<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>(.*?)<\/script>/s) ||
                          html.match(/<script id="SIGI_STATE"[^>]*>(.*?)<\/script>/s);
 
@@ -288,16 +295,37 @@ async function extractTikTok(url, videoId) {
               platform: 'tiktok',
               author: itemModule.author?.uniqueId || itemModule.author?.nickname || '',
               hasVideo: true,
+              extractionQuality: 'full',
             };
           }
         } catch (_) {}
+      }
+
+      // Try extracting og: meta tags from the HTML
+      const ogImage = html.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/);
+      const ogTitle = html.match(/<meta[^>]+property="og:title"[^>]+content="([^"]+)"/);
+      const ogDesc = html.match(/<meta[^>]+property="og:description"[^>]+content="([^"]+)"/);
+
+      if (ogImage || ogTitle) {
+        return {
+          id: videoId,
+          title: (ogTitle?.[1] || ogDesc?.[1] || 'TikTok Video').slice(0, 100),
+          thumbnail: ogImage?.[1] || null,
+          date: null,
+          category: 'video',
+          url: ogImage?.[1] || null,
+          sourceUrl: url,
+          platform: 'tiktok',
+          author: '',
+          hasVideo: true,
+          extractionQuality: 'good',
+        };
       }
     }
   } catch (err) {
     console.error('TikTok page scrape failed:', err.message);
   }
 
-  // Minimal fallback
   return {
     id: videoId,
     title: 'TikTok Video',
@@ -308,19 +336,21 @@ async function extractTikTok(url, videoId) {
     sourceUrl: url,
     platform: 'tiktok',
     hasVideo: true,
+    extractionQuality: 'limited',
+    limitedReason: 'Could not load preview. The video may be private or unavailable.',
   };
 }
 
 // ── Twitter/X Extractor ──────────────────────────────
 
 async function extractTwitter(url, statusId) {
-  // Use fxtwitter.com API (free, reliable, returns media URLs)
-  try {
-    const match = url.match(/(?:twitter\.com|x\.com)\/(\w+)\/status\/(\d+)/);
-    const username = match ? match[1] : 'user';
+  const match = url.match(/(?:twitter\.com|x\.com)\/(\w+)\/status\/(\d+)/);
+  const username = match ? match[1] : 'user';
 
+  // Strategy 1: fxtwitter API (best quality, returns media URLs)
+  try {
     const fxUrl = `https://api.fxtwitter.com/${username}/status/${statusId}`;
-    const res = await fetch(fxUrl);
+    const res = await fetch(fxUrl, { signal: AbortSignal.timeout(8000) });
 
     if (res.ok) {
       const data = await res.json();
@@ -337,7 +367,7 @@ async function extractTwitter(url, statusId) {
           date: tweet.created_at ? new Date(tweet.created_at).toISOString() : null,
           category: 'tweet',
           url: firstMedia?.url || null,
-          sourceUrl: `https://twitter.com/${username}/status/${statusId}`,
+          sourceUrl: `https://x.com/${username}/status/${statusId}`,
           platform: 'twitter',
           author: tweet.author?.name || tweet.author?.screen_name || username,
           hasVideo: !!(tweet.media?.videos?.length),
@@ -346,6 +376,7 @@ async function extractTwitter(url, statusId) {
             thumbnail: m.thumbnail_url || m.url,
             type: m.type || 'photo',
           })),
+          extractionQuality: 'full',
         };
       }
     }
@@ -353,24 +384,66 @@ async function extractTwitter(url, statusId) {
     console.error('fxtwitter API failed:', err.message);
   }
 
-  // Fallback: Twitter oEmbed
+  // Strategy 2: vxtwitter API (alternative)
+  try {
+    const vxUrl = `https://api.vxtwitter.com/${username}/status/${statusId}`;
+    const res = await fetch(vxUrl, { signal: AbortSignal.timeout(8000) });
+
+    if (res.ok) {
+      const text = await res.text();
+      // vxtwitter sometimes returns HTML instead of JSON
+      if (text.startsWith('{') || text.startsWith('[')) {
+        const data = JSON.parse(text);
+        if (data.text || data.user_name) {
+          const mediaUrls = data.mediaURLs || data.media_extended?.map(m => m.url) || [];
+          return {
+            id: statusId,
+            title: data.text ? data.text.slice(0, 100) : 'Tweet',
+            thumbnail: mediaUrls[0] || null,
+            date: data.date ? new Date(data.date).toISOString() : null,
+            category: 'tweet',
+            url: mediaUrls[0] || null,
+            sourceUrl: `https://x.com/${username}/status/${statusId}`,
+            platform: 'twitter',
+            author: data.user_name || username,
+            hasVideo: data.media_extended?.some(m => m.type === 'video') || false,
+            mediaItems: (data.media_extended || []).map(m => ({
+              url: m.url,
+              thumbnail: m.thumbnail_url || m.url,
+              type: m.type || 'photo',
+            })),
+            extractionQuality: 'full',
+          };
+        }
+      }
+    }
+  } catch (err) {
+    console.error('vxtwitter API failed:', err.message);
+  }
+
+  // Strategy 3: Twitter oEmbed (limited but reliable)
   try {
     const oembedUrl = `https://publish.twitter.com/oembed?url=${encodeURIComponent(url)}&format=json`;
-    const res = await fetch(oembedUrl);
+    const res = await fetch(oembedUrl, { signal: AbortSignal.timeout(8000) });
 
     if (res.ok) {
       const data = await res.json();
+      // Extract tweet text from the HTML embed
+      const textMatch = data.html?.match(/<p[^>]*>(.*?)<\/p>/s);
+      const tweetText = textMatch?.[1]?.replace(/<[^>]+>/g, '')?.slice(0, 100) || '';
+
       return {
         id: statusId,
-        title: data.author_name ? `${data.author_name}'s tweet` : 'Tweet',
+        title: tweetText || (data.author_name ? `${data.author_name}'s tweet` : 'Tweet'),
         thumbnail: null,
         date: null,
         category: 'tweet',
         url: null,
-        sourceUrl: url,
+        sourceUrl: `https://x.com/${username}/status/${statusId}`,
         platform: 'twitter',
         author: data.author_name || '',
         hasVideo: false,
+        extractionQuality: 'basic',
       };
     }
   } catch (err) {
@@ -384,19 +457,16 @@ async function extractTwitter(url, statusId) {
     date: null,
     category: 'tweet',
     url: null,
-    sourceUrl: url,
+    sourceUrl: `https://x.com/${username}/status/${statusId}`,
     platform: 'twitter',
     hasVideo: false,
+    extractionQuality: 'limited',
+    limitedReason: 'Could not load tweet preview. The tweet may be private or deleted.',
   };
 }
 
 // ── Main Extract Function ────────────────────────────
 
-/**
- * Extract content info from any supported platform URL
- * @param {string} url
- * @returns {Promise<object>} Standardized content item
- */
 async function extractFromUrl(url) {
   const detected = detectPlatform(url);
   if (!detected) {
@@ -417,11 +487,6 @@ async function extractFromUrl(url) {
 
 // ── YouTube Download Stream ──────────────────────────
 
-/**
- * Get a download stream for a YouTube video
- * @param {string} url - YouTube video URL
- * @returns {ReadableStream}
- */
 function downloadYouTubeStream(url) {
   const ytdl = require('@ybd-project/ytdl-core');
   const cookies = getCookies('youtube');
@@ -442,20 +507,12 @@ function downloadYouTubeStream(url) {
 
 // ── YouTube Search ───────────────────────────────────
 
-/**
- * Search YouTube without API key
- * Uses direct page scraping since youtube-sr search() has parsing bugs
- * @param {string} query - Search query
- * @param {number} limit - Max results
- * @returns {Promise<object[]>} Content items
- */
 async function searchYouTube(query, limit = 20) {
   try {
-    // Direct YouTube search page scraping
     const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
     const res = await fetch(searchUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
         'Accept-Language': 'en-US,en;q=0.9',
       },
     });
@@ -463,7 +520,6 @@ async function searchYouTube(query, limit = 20) {
     if (!res.ok) throw new Error(`YouTube search returned ${res.status}`);
     const html = await res.text();
 
-    // Extract ytInitialData JSON from the page
     const dataMatch = html.match(/var ytInitialData = ({.*?});<\/script>/s);
     if (!dataMatch) throw new Error('Could not parse YouTube search results');
 
@@ -478,7 +534,6 @@ async function searchYouTube(query, limit = 20) {
         const video = renderer?.videoRenderer;
         if (!video || !video.videoId) continue;
 
-        // Parse duration text like "3:42" to seconds
         let duration = 0;
         const durText = video.lengthText?.simpleText;
         if (durText) {

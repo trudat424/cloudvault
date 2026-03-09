@@ -559,11 +559,36 @@ router.post('/import-url', async (req, res) => {
         }
       } else if (item.thumbnail) {
         // Fallback: at least save the thumbnail
-        const dlRes = await fetch(item.thumbnail);
+        const dlRes = await fetch(item.thumbnail, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36' },
+        });
         if (!dlRes.ok) throw new Error('Could not download thumbnail');
         buffer = Buffer.from(await dlRes.arrayBuffer());
       } else {
-        throw new Error('No downloadable media found for this URL');
+        // No downloadable media — save as a link-only entry
+        const id = 'url_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+        run(
+          `INSERT INTO media (id, account_id, person_name, person_email, type,
+            original_name, stored_name, mime_type, size_bytes,
+            has_thumbnail, drive_file_id, source_platform, source_category, source_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            id, accountId, account.name, account.email || '', 'link',
+            item.title || 'Link', item.title || 'Link', 'text/uri-list', 0,
+            0, null, item.platform, item.category || 'post',
+            item.sourceUrl || url,
+          ]
+        );
+        res.write(`event: done\ndata: ${JSON.stringify({
+          imported: 1,
+          total: 1,
+          mediaId: id,
+          title: item.title,
+          platform: item.platform,
+          savedAs: 'link',
+        })}\n\n`);
+        res.end();
+        return;
       }
     } catch (err) {
       res.write(`event: error\ndata: ${JSON.stringify({ error: err.message })}\n\n`);

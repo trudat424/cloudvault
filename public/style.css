@@ -5054,6 +5054,7 @@ img { display: block; max-width: 100%; }
 .connection-card {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 16px;
   padding: 20px 24px;
   background: var(--bg-card);
@@ -5425,6 +5426,79 @@ img { display: block; max-width: 100%; }
 .conn-scrape-browse:hover {
   background: var(--bg-hover);
   border-color: var(--accent);
+}
+
+/* ═══ QUICK IMPORT (inline URL input on cards) ═══ */
+.conn-quick-import {
+  width: 100%;
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.conn-quick-input {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  outline: none;
+  transition: border-color 0.2s;
+  min-width: 0;
+}
+
+.conn-quick-input::placeholder {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.conn-quick-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.conn-quick-btn {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: white;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.conn-quick-btn:hover {
+  background: var(--accent-hover);
+  box-shadow: var(--shadow-glow);
+}
+
+/* ═══ URL PREVIEW WARNING ═══ */
+.url-preview-warning {
+  font-size: 0.8rem;
+  color: var(--amber, #f59e0b);
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+
+.url-preview-limited {
+  opacity: 0.8;
+}
+
+.url-preview-limited .url-preview-thumb-placeholder {
+  font-size: 1.5rem;
 }
 
 /* ═══ SOCIAL DURATION BADGE ═══ */
