@@ -5646,14 +5646,14 @@ img { display: block; max-width: 100%; }
 
 /* ── Instagram Login (Admin Panel) ── */
 
-.ig-accounts-list {
+.platform-accounts-list {
   display: flex;
   flex-direction: column;
   gap: 6px;
   margin-bottom: 12px;
 }
 
-.ig-account-item {
+.platform-account-item {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -5663,18 +5663,18 @@ img { display: block; max-width: 100%; }
   font-size: 0.85rem;
 }
 
-.ig-account-name {
+.platform-account-name {
   font-weight: 600;
   color: var(--text-primary);
 }
 
-.ig-account-date {
+.platform-account-date {
   color: var(--text-muted);
   font-size: 0.75rem;
   margin-left: auto;
 }
 
-.ig-account-remove {
+.platform-account-remove {
   background: none;
   border: none;
   color: var(--text-muted);
@@ -5686,22 +5686,22 @@ img { display: block; max-width: 100%; }
   transition: all 0.15s;
 }
 
-.ig-account-remove:hover {
+.platform-account-remove:hover {
   color: var(--red);
   background: rgba(220, 38, 38, 0.1);
 }
 
-.ig-login-form {
+.platform-login-form {
   margin-bottom: 8px;
 }
 
-.ig-login-inputs {
+.platform-login-inputs {
   display: flex;
   gap: 8px;
   align-items: center;
 }
 
-.ig-login-inputs input {
+.platform-login-inputs input {
   flex: 1;
   padding: 8px 12px;
   border: 1px solid var(--border);
@@ -5711,19 +5711,19 @@ img { display: block; max-width: 100%; }
   font-size: 0.85rem;
 }
 
-.ig-login-inputs input:focus {
+.platform-login-inputs input:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
-.ig-login-inputs .btn {
+.platform-login-inputs .btn {
   white-space: nowrap;
   padding: 8px 16px;
   font-size: 0.85rem;
 }
 
-.ig-login-error {
+.platform-login-error {
   margin-top: 8px;
   padding: 8px 12px;
   background: rgba(220, 38, 38, 0.08);
@@ -5733,24 +5733,24 @@ img { display: block; max-width: 100%; }
   font-size: 0.8rem;
 }
 
-.ig-login-note {
+.platform-login-note {
   font-size: 0.72rem;
   color: var(--text-muted);
   margin-top: 6px;
   margin-bottom: 0;
 }
 
-.ig-manual-toggle {
+.platform-manual-toggle {
   margin-bottom: 8px;
 }
 
-.ig-manual-toggle a {
+.platform-manual-toggle a {
   font-size: 0.78rem;
   color: var(--text-muted);
   text-decoration: underline;
 }
 
-.ig-manual-toggle a:hover {
+.platform-manual-toggle a:hover {
   color: var(--accent);
 }
 

@@ -39,18 +39,21 @@ function detectPlatform(url) {
 
 // ── Cookie Loader ────────────────────────────────────
 
-let igAccountIndex = 0; // Round-robin counter for Instagram multi-account
+// Round-robin counters for multi-account platforms
+const accountIndexes = { instagram: 0, tiktok: 0, twitter: 0 };
+const MULTI_ACCOUNT_PLATFORMS = ['instagram', 'tiktok', 'twitter'];
 
 function getCookies(platform) {
-  // Instagram multi-account pool: rotate through logged-in scraper accounts
-  if (platform === 'instagram') {
+  // Multi-account pool: rotate through logged-in scraper accounts
+  if (MULTI_ACCOUNT_PLATFORMS.includes(platform)) {
     try {
-      const accountsRow = queryOne('SELECT value FROM settings WHERE key = ?', ['scraper_accounts_instagram']);
+      const accountsRow = queryOne('SELECT value FROM settings WHERE key = ?', [`scraper_accounts_${platform}`]);
       if (accountsRow && accountsRow.value) {
         const accounts = JSON.parse(accountsRow.value);
         if (Array.isArray(accounts) && accounts.length > 0) {
-          const account = accounts[igAccountIndex % accounts.length];
-          igAccountIndex++;
+          const idx = accountIndexes[platform] || 0;
+          const account = accounts[idx % accounts.length];
+          accountIndexes[platform] = idx + 1;
           if (account.cookies) return account.cookies;
         }
       }
@@ -364,6 +367,72 @@ async function extractTikTok(url, videoId) {
 async function extractTwitter(url, statusId) {
   const match = url.match(/(?:twitter\.com|x\.com)\/(\w+)\/status\/(\d+)/);
   const username = match ? match[1] : 'user';
+
+  // Strategy 0: Direct Twitter API with auth cookies (best when logged in)
+  const twitterCookies = getCookies('twitter');
+  if (twitterCookies) {
+    try {
+      // Extract ct0 (CSRF token) from cookie string
+      const ct0Match = twitterCookies.match(/ct0=([^;]+)/);
+      const csrfToken = ct0Match ? ct0Match[1] : '';
+
+      const bearerToken = 'AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA';
+      const variables = JSON.stringify({ tweetId: statusId, withCommunity: false, includePromotedContent: false, withVoice: false });
+      const features = JSON.stringify({ creator_subscriptions_tweet_preview_api_enabled: true, premium_content_api_read_enabled: false, communities_web_enable_tweet_community_results_fetch: true, c9s_tweet_anatomy_moderator_badge_enabled: true, responsive_web_edit_tweet_api_enabled: true, graphql_is_translatable_rweb_tweet_is_translatable: true, view_counts_everywhere_api_enabled: true, longform_notetweets_consumption_enabled: true, responsive_web_twitter_article_tweet_consumption_enabled: true, tweet_awards_web_tipping_enabled: false, creator_subscriptions_quote_tweet_preview_enabled: false, freedom_of_speech_not_reach_fetch_enabled: true, standardized_nudges_misinfo: true, tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled: true, rweb_video_timestamps_enabled: true, longform_notetweets_rich_text_read_enabled: true, longform_notetweets_inline_media_enabled: true, rweb_tipjar_consumption_enabled: true, responsive_web_graphql_exclude_directive_enabled: true, verified_phone_label_enabled: false, responsive_web_graphql_skip_user_profile_image_extensions_enabled: false, responsive_web_graphql_timeline_navigation_enabled: true, responsive_web_enhance_cards_enabled: false });
+
+      const gqlUrl = `https://x.com/i/api/graphql/xOhkmRac04YFZDOlWGExEQ/TweetResultByRestId?variables=${encodeURIComponent(variables)}&features=${encodeURIComponent(features)}`;
+
+      const gqlRes = await fetch(gqlUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+          'Authorization': `Bearer ${bearerToken}`,
+          'X-Csrf-Token': csrfToken,
+          'Cookie': twitterCookies,
+          'X-Twitter-Active-User': 'yes',
+          'X-Twitter-Auth-Type': 'OAuth2Session',
+        },
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (gqlRes.ok) {
+        const data = await gqlRes.json();
+        const tweetResult = data?.data?.tweetResult?.result;
+        const tweet = tweetResult?.tweet || tweetResult; // Handle both wrapped and unwrapped
+        const legacy = tweet?.legacy;
+        const userLegacy = tweet?.core?.user_results?.result?.legacy;
+
+        if (legacy) {
+          const mediaEntities = legacy.extended_entities?.media || legacy.entities?.media || [];
+          const firstMedia = mediaEntities[0];
+
+          return {
+            id: statusId,
+            title: legacy.full_text ? legacy.full_text.slice(0, 100) : 'Tweet',
+            thumbnail: firstMedia?.media_url_https || null,
+            date: legacy.created_at ? new Date(legacy.created_at).toISOString() : null,
+            category: 'tweet',
+            url: firstMedia?.type === 'video'
+              ? (firstMedia.video_info?.variants?.filter(v => v.content_type === 'video/mp4')?.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))?.[0]?.url || null)
+              : (firstMedia?.media_url_https || null),
+            sourceUrl: `https://x.com/${username}/status/${statusId}`,
+            platform: 'twitter',
+            author: userLegacy?.name || userLegacy?.screen_name || username,
+            hasVideo: mediaEntities.some(m => m.type === 'video' || m.type === 'animated_gif'),
+            mediaItems: mediaEntities.map(m => ({
+              url: m.type === 'video'
+                ? (m.video_info?.variants?.filter(v => v.content_type === 'video/mp4')?.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))?.[0]?.url || m.media_url_https)
+                : m.media_url_https,
+              thumbnail: m.media_url_https,
+              type: m.type === 'photo' ? 'photo' : 'video',
+            })),
+            extractionQuality: 'full',
+          };
+        }
+      }
+    } catch (err) {
+      console.error('Twitter direct API failed:', err.message);
+    }
+  }
 
   // Strategy 1: fxtwitter API (best quality, returns media URLs)
   try {

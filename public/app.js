@@ -3001,11 +3001,16 @@ async function renderAdminScraperSettings() {
   const container = $('#adminScraperCookies');
   if (!container) return;
 
-  // Platforms that still use the legacy cookie-paste UI
-  const cookiePlatforms = [
-    { id: 'youtube', name: 'YouTube', icon: '▶️' },
+  // Platforms with login-based auth
+  const loginPlatforms = [
+    { id: 'instagram', name: 'Instagram', icon: '📷' },
     { id: 'tiktok', name: 'TikTok', icon: '🎵' },
     { id: 'twitter', name: 'Twitter/X', icon: '🐦' },
+  ];
+
+  // Platforms that only use cookie-paste
+  const cookieOnlyPlatforms = [
+    { id: 'youtube', name: 'YouTube', icon: '▶️' },
   ];
 
   let status = {};
@@ -3013,76 +3018,84 @@ async function renderAdminScraperSettings() {
     status = await API.get('/admin/scraper-cookies');
   } catch (_) {}
 
-  // Fetch Instagram accounts
-  let igAccounts = [];
-  try {
-    igAccounts = await API.get('/admin/instagram/accounts');
-  } catch (_) {}
+  // Fetch accounts for all login platforms
+  const platformAccounts = {};
+  for (const p of loginPlatforms) {
+    try {
+      platformAccounts[p.id] = await API.get(`/admin/${p.id}/accounts`);
+    } catch (_) {
+      platformAccounts[p.id] = [];
+    }
+  }
 
-  const igConfigured = igAccounts.length > 0 || status.instagram;
+  // ── Build login-based platform sections ──
+  const loginHtml = loginPlatforms.map(p => {
+    const accounts = platformAccounts[p.id] || [];
+    const configured = accounts.length > 0 || status[p.id];
+    const pid = p.id; // short alias
 
-  // ── Instagram section (login-based) ──
-  const igHtml = `
-    <div class="scraper-cookie-row" data-platform="instagram">
+    return `
+    <div class="scraper-cookie-row" data-platform="${pid}">
       <div class="scraper-cookie-header">
-        <span class="scraper-cookie-label">📷 Instagram</span>
-        <span class="scraper-cookie-status ${igConfigured ? 'configured' : ''}">${
-          igAccounts.length > 0
-            ? '✓ ' + igAccounts.length + ' account' + (igAccounts.length > 1 ? 's' : '')
-            : status.instagram ? '✓ Manual cookies' : '✗ Not set'
+        <span class="scraper-cookie-label">${p.icon} ${p.name}</span>
+        <span class="scraper-cookie-status ${configured ? 'configured' : ''}">${
+          accounts.length > 0
+            ? '✓ ' + accounts.length + ' account' + (accounts.length > 1 ? 's' : '')
+            : status[pid] ? '✓ Manual cookies' : '✗ Not set'
         }</span>
       </div>
 
-      ${igAccounts.length > 0 ? `
-        <div class="ig-accounts-list">
-          ${igAccounts.map(a => `
-            <div class="ig-account-item">
-              <span class="ig-account-name">@${a.username}</span>
-              <span class="ig-account-date">${a.addedAt ? new Date(a.addedAt).toLocaleDateString() : ''}</span>
-              <button class="ig-account-remove" data-username="${a.username}" title="Remove account">×</button>
+      ${accounts.length > 0 ? `
+        <div class="platform-accounts-list">
+          ${accounts.map(a => `
+            <div class="platform-account-item">
+              <span class="platform-account-name">@${a.username}</span>
+              <span class="platform-account-date">${a.addedAt ? new Date(a.addedAt).toLocaleDateString() : ''}</span>
+              <button class="platform-account-remove" data-platform="${pid}" data-username="${a.username}" title="Remove account">×</button>
             </div>
           `).join('')}
         </div>
       ` : ''}
 
-      <div class="ig-login-form" id="igScraperLoginForm">
-        <div id="igScraperStep1">
-          <div class="ig-login-inputs">
-            <input type="text" id="igScraperUsername" placeholder="Instagram username" autocomplete="off" />
-            <input type="password" id="igScraperPassword" placeholder="Password" autocomplete="off" />
-            <button class="btn btn-primary" id="igScraperLoginBtn">Add Account</button>
+      <div class="platform-login-form" id="${pid}ScraperLoginForm">
+        <div id="${pid}ScraperStep1">
+          <div class="platform-login-inputs">
+            <input type="text" id="${pid}ScraperUsername" placeholder="${p.name} username" autocomplete="off" />
+            <input type="password" id="${pid}ScraperPassword" placeholder="Password" autocomplete="off" />
+            <button class="btn btn-primary platform-login-btn" data-platform="${pid}">Add Account</button>
           </div>
-          <div id="igScraperError" class="ig-login-error" style="display:none;"></div>
-          <p class="ig-login-note">Credentials are sent directly to Instagram and are not stored.</p>
+          <div id="${pid}ScraperError" class="platform-login-error" style="display:none;"></div>
+          <p class="platform-login-note">Credentials are sent directly to ${p.name} and are not stored.</p>
         </div>
-        <div id="igScraperStep2" style="display:none;">
-          <div class="ig-login-inputs">
-            <input type="text" id="igScraper2FACode" placeholder="6-digit 2FA code" maxlength="8" autocomplete="one-time-code" />
-            <button class="btn btn-primary" id="igScraper2FABtn">Verify</button>
+        <div id="${pid}ScraperStep2" style="display:none;">
+          <div class="platform-login-inputs">
+            <input type="text" id="${pid}Scraper2FACode" placeholder="6-digit 2FA code" maxlength="8" autocomplete="one-time-code" />
+            <button class="btn btn-primary platform-2fa-btn" data-platform="${pid}">Verify</button>
           </div>
-          <div id="igScraper2FAError" class="ig-login-error" style="display:none;"></div>
+          <div id="${pid}Scraper2FAError" class="platform-login-error" style="display:none;"></div>
         </div>
       </div>
 
-      <div class="ig-manual-toggle">
-        <a href="#" id="igManualToggle">Paste cookies manually</a>
+      <div class="platform-manual-toggle">
+        <a href="#" class="manual-toggle-link" data-platform="${pid}">Paste cookies manually</a>
       </div>
-      <div id="igManualSection" style="display:none;">
-        <textarea class="scraper-cookie-input" id="scraperCookie_instagram" placeholder="Paste cookie header string from browser DevTools..."></textarea>
+      <div id="${pid}ManualSection" style="display:none;">
+        <textarea class="scraper-cookie-input" id="scraperCookie_${pid}" placeholder="Paste cookie header string from browser DevTools..."></textarea>
         <div class="scraper-cookie-actions">
           <label class="scraper-cookie-file-label">
-            <input type="file" class="scraper-cookie-file" data-platform="instagram" accept=".txt,.cookie,.cookies" style="display:none;" />
+            <input type="file" class="scraper-cookie-file" data-platform="${pid}" accept=".txt,.cookie,.cookies" style="display:none;" />
             Upload File
           </label>
-          <button class="btn btn-primary scraper-cookie-save" data-platform="instagram">Save</button>
-          <button class="btn scraper-cookie-clear" data-platform="instagram" ${!status.instagram ? 'disabled' : ''}>Clear</button>
+          <button class="btn btn-primary scraper-cookie-save" data-platform="${pid}">Save</button>
+          <button class="btn scraper-cookie-clear" data-platform="${pid}" ${!status[pid] ? 'disabled' : ''}>Clear</button>
         </div>
       </div>
     </div>
   `;
+  }).join('');
 
-  // ── Other platforms (legacy cookie-paste) ──
-  const otherHtml = cookiePlatforms.map(p => `
+  // ── Cookie-only platforms (YouTube) ──
+  const cookieHtml = cookieOnlyPlatforms.map(p => `
     <div class="scraper-cookie-row" data-platform="${p.id}">
       <div class="scraper-cookie-header">
         <span class="scraper-cookie-label">${p.icon} ${p.name}</span>
@@ -3100,26 +3113,25 @@ async function renderAdminScraperSettings() {
     </div>
   `).join('');
 
-  container.innerHTML = igHtml + otherHtml;
+  container.innerHTML = loginHtml + cookieHtml;
 
-  // ── Instagram login event listeners ──
+  // ── Login button listeners (all login platforms) ──
+  container.querySelectorAll('.platform-login-btn').forEach(btn => {
+    btn.addEventListener('click', () => submitPlatformScraperLogin(btn.dataset.platform));
+  });
 
-  const igLoginBtn = $('#igScraperLoginBtn');
-  if (igLoginBtn) {
-    igLoginBtn.addEventListener('click', submitInstagramScraperLogin);
-  }
+  // ── 2FA button listeners ──
+  container.querySelectorAll('.platform-2fa-btn').forEach(btn => {
+    btn.addEventListener('click', () => submitPlatformScraper2FA(btn.dataset.platform));
+  });
 
-  const ig2FABtn = $('#igScraper2FABtn');
-  if (ig2FABtn) {
-    ig2FABtn.addEventListener('click', submitInstagramScraper2FA);
-  }
-
-  // Instagram account remove buttons
-  container.querySelectorAll('.ig-account-remove').forEach(btn => {
+  // ── Account remove buttons ──
+  container.querySelectorAll('.platform-account-remove').forEach(btn => {
     btn.addEventListener('click', async () => {
+      const platform = btn.dataset.platform;
       const username = btn.dataset.username;
       try {
-        await API.del(`/admin/instagram/account/${username}`);
+        await API.del(`/admin/${platform}/account/${username}`);
         showToast(`Removed @${username}`, 'info');
         renderAdminScraperSettings();
       } catch (err) {
@@ -3128,21 +3140,21 @@ async function renderAdminScraperSettings() {
     });
   });
 
-  // Manual toggle
-  const manualToggle = $('#igManualToggle');
-  if (manualToggle) {
-    manualToggle.addEventListener('click', (e) => {
+  // ── Manual toggle links ──
+  container.querySelectorAll('.manual-toggle-link').forEach(link => {
+    link.addEventListener('click', (e) => {
       e.preventDefault();
-      const section = $('#igManualSection');
+      const platform = link.dataset.platform;
+      const section = $(`#${platform}ManualSection`);
       if (section) {
         const shown = section.style.display !== 'none';
         section.style.display = shown ? 'none' : 'block';
-        manualToggle.textContent = shown ? 'Paste cookies manually' : 'Hide manual cookie paste';
+        link.textContent = shown ? 'Paste cookies manually' : 'Hide manual cookie paste';
       }
     });
-  }
+  });
 
-  // ── Legacy cookie save/clear/file listeners (all platforms including instagram manual) ──
+  // ── Legacy cookie save/clear/file listeners (all platforms) ──
 
   container.querySelectorAll('.scraper-cookie-save').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -3195,15 +3207,15 @@ async function renderAdminScraperSettings() {
   });
 }
 
-// ── Instagram scraper login functions ──
+// ── Generic platform scraper login functions ──
 
-let _igScraper2FAState = {};
+const _scraper2FAState = {};
 
-async function submitInstagramScraperLogin() {
-  const username = $('#igScraperUsername')?.value?.trim();
-  const password = $('#igScraperPassword')?.value;
-  const errorEl = $('#igScraperError');
-  const btn = $('#igScraperLoginBtn');
+async function submitPlatformScraperLogin(platform) {
+  const username = $(`#${platform}ScraperUsername`)?.value?.trim();
+  const password = $(`#${platform}ScraperPassword`)?.value;
+  const errorEl = $(`#${platform}ScraperError`);
+  const btn = document.querySelector(`.platform-login-btn[data-platform="${platform}"]`);
 
   if (!username || !password) {
     if (errorEl) { errorEl.textContent = 'Username and password required'; errorEl.style.display = 'block'; }
@@ -3215,18 +3227,18 @@ async function submitInstagramScraperLogin() {
   if (errorEl) errorEl.style.display = 'none';
 
   try {
-    const result = await API.post('/admin/instagram/login', { username, password });
+    const result = await API.post(`/admin/${platform}/login`, { username, password });
 
     if (result.success) {
-      showToast(`Added @${result.username} as scraper account`, 'success');
+      showToast(`Added @${result.username} as ${platform} scraper account`, 'success');
       renderAdminScraperSettings();
       return;
     }
 
     if (result.twoFactorRequired) {
-      _igScraper2FAState = { username: result.username, identifier: result.identifier };
-      const step1 = $('#igScraperStep1');
-      const step2 = $('#igScraperStep2');
+      _scraper2FAState[platform] = { username: result.username, identifier: result.identifier };
+      const step1 = $(`#${platform}ScraperStep1`);
+      const step2 = $(`#${platform}ScraperStep2`);
       if (step1) step1.style.display = 'none';
       if (step2) step2.style.display = 'block';
       showToast(`2FA code required (${result.method === 'totp' ? 'authenticator app' : 'SMS'})`, 'info');
@@ -3243,10 +3255,10 @@ async function submitInstagramScraperLogin() {
   }
 }
 
-async function submitInstagramScraper2FA() {
-  const code = $('#igScraper2FACode')?.value?.trim();
-  const errorEl = $('#igScraper2FAError');
-  const btn = $('#igScraper2FABtn');
+async function submitPlatformScraper2FA(platform) {
+  const code = $(`#${platform}Scraper2FACode`)?.value?.trim();
+  const errorEl = $(`#${platform}Scraper2FAError`);
+  const btn = document.querySelector(`.platform-2fa-btn[data-platform="${platform}"]`);
 
   if (!code) {
     if (errorEl) { errorEl.textContent = 'Enter your 2FA code'; errorEl.style.display = 'block'; }
@@ -3257,16 +3269,18 @@ async function submitInstagramScraper2FA() {
   btn.textContent = 'Verifying...';
   if (errorEl) errorEl.style.display = 'none';
 
+  const state = _scraper2FAState[platform] || {};
+
   try {
-    const result = await API.post('/admin/instagram/verify-2fa', {
-      username: _igScraper2FAState.username,
+    const result = await API.post(`/admin/${platform}/verify-2fa`, {
+      username: state.username,
       code,
-      identifier: _igScraper2FAState.identifier,
+      identifier: state.identifier,
     });
 
     if (result.success) {
-      showToast(`Added @${result.username} as scraper account`, 'success');
-      _igScraper2FAState = {};
+      showToast(`Added @${result.username} as ${platform} scraper account`, 'success');
+      delete _scraper2FAState[platform];
       renderAdminScraperSettings();
       return;
     }

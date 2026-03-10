@@ -202,21 +202,23 @@ router.delete('/scraper-cookies/:platform', (req, res) => {
   res.json({ success: true });
 });
 
-// ── Instagram Login (Multi-Account) ──────────────────
+// ── Platform Login (Multi-Account) ───────────────────
 
 const instagramAuth = require('../services/instagramAuth');
+const tiktokAuth = require('../services/tiktokAuth');
+const twitterAuth = require('../services/twitterAuth');
 
-// Helper: read/write the scraper accounts JSON array
-function getInstagramAccounts() {
+// Generic helpers: read/write scraper accounts JSON array for any platform
+function getPlatformAccounts(platform) {
   try {
-    const row = queryOne('SELECT value FROM settings WHERE key = ?', ['scraper_accounts_instagram']);
+    const row = queryOne('SELECT value FROM settings WHERE key = ?', [`scraper_accounts_${platform}`]);
     if (row && row.value) return JSON.parse(row.value);
   } catch (_) {}
   return [];
 }
 
-function saveInstagramAccounts(accounts) {
-  const key = 'scraper_accounts_instagram';
+function savePlatformAccounts(platform, accounts) {
+  const key = `scraper_accounts_${platform}`;
   const value = JSON.stringify(accounts);
   const existing = queryOne('SELECT key FROM settings WHERE key = ?', [key]);
   if (existing) {
@@ -225,6 +227,29 @@ function saveInstagramAccounts(accounts) {
     run('INSERT INTO settings (key, value) VALUES (?, ?)', [key, value]);
   }
 }
+
+// Upsert an account into a platform's accounts array
+function upsertPlatformAccount(platform, result) {
+  const accounts = getPlatformAccounts(platform);
+  const idx = accounts.findIndex(a => a.username === result.username);
+  const account = {
+    username: result.username,
+    userId: result.userId || '',
+    cookies: result.cookies,
+    addedAt: new Date().toISOString(),
+  };
+
+  if (idx >= 0) {
+    accounts[idx] = account;
+  } else {
+    accounts.push(account);
+  }
+
+  savePlatformAccounts(platform, accounts);
+  return accounts;
+}
+
+// ── Instagram Endpoints ─────────────────────────────
 
 // POST /api/admin/instagram/login — start Instagram login
 router.post('/instagram/login', async (req, res) => {
@@ -237,23 +262,7 @@ router.post('/instagram/login', async (req, res) => {
     const result = await instagramAuth.login(username, password);
 
     if (result.success) {
-      // Add to accounts array (replace if same username exists)
-      const accounts = getInstagramAccounts();
-      const idx = accounts.findIndex(a => a.username === username);
-      const account = {
-        username: result.username,
-        userId: result.userId || '',
-        cookies: result.cookies,
-        addedAt: new Date().toISOString(),
-      };
-
-      if (idx >= 0) {
-        accounts[idx] = account;
-      } else {
-        accounts.push(account);
-      }
-
-      saveInstagramAccounts(accounts);
+      const accounts = upsertPlatformAccount('instagram', result);
       return res.json({ success: true, username: result.username, totalAccounts: accounts.length });
     }
 
@@ -284,22 +293,7 @@ router.post('/instagram/verify-2fa', async (req, res) => {
     const result = await instagramAuth.verify2FA(username, code, identifier);
 
     if (result.success) {
-      const accounts = getInstagramAccounts();
-      const idx = accounts.findIndex(a => a.username === username);
-      const account = {
-        username: result.username,
-        userId: result.userId || '',
-        cookies: result.cookies,
-        addedAt: new Date().toISOString(),
-      };
-
-      if (idx >= 0) {
-        accounts[idx] = account;
-      } else {
-        accounts.push(account);
-      }
-
-      saveInstagramAccounts(accounts);
+      const accounts = upsertPlatformAccount('instagram', result);
       return res.json({ success: true, username: result.username, totalAccounts: accounts.length });
     }
 
@@ -312,7 +306,7 @@ router.post('/instagram/verify-2fa', async (req, res) => {
 
 // GET /api/admin/instagram/accounts — list scraper accounts (without cookie values)
 router.get('/instagram/accounts', (req, res) => {
-  const accounts = getInstagramAccounts();
+  const accounts = getPlatformAccounts('instagram');
   res.json(accounts.map(a => ({
     username: a.username,
     userId: a.userId,
@@ -324,14 +318,156 @@ router.get('/instagram/accounts', (req, res) => {
 // DELETE /api/admin/instagram/account/:username — remove a scraper account
 router.delete('/instagram/account/:username', (req, res) => {
   const { username } = req.params;
-  const accounts = getInstagramAccounts();
+  const accounts = getPlatformAccounts('instagram');
   const filtered = accounts.filter(a => a.username !== username);
 
   if (filtered.length === accounts.length) {
     return res.status(404).json({ error: 'Account not found' });
   }
 
-  saveInstagramAccounts(filtered);
+  savePlatformAccounts('instagram', filtered);
+  res.json({ success: true, remaining: filtered.length });
+});
+
+// ── TikTok Endpoints ────────────────────────────────
+
+// POST /api/admin/tiktok/login — start TikTok login
+router.post('/tiktok/login', async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password required' });
+  }
+
+  try {
+    const result = await tiktokAuth.login(username, password);
+
+    if (result.success) {
+      const accounts = upsertPlatformAccount('tiktok', result);
+      return res.json({ success: true, username: result.username, totalAccounts: accounts.length });
+    }
+
+    if (result.twoFactorRequired) {
+      return res.json({
+        twoFactorRequired: true,
+        method: result.method || 'unknown',
+        username: result.username,
+      });
+    }
+
+    return res.status(400).json({ error: result.error || 'Login failed' });
+  } catch (err) {
+    console.error('TikTok login endpoint error:', err);
+    return res.status(500).json({ error: 'Internal server error during login' });
+  }
+});
+
+// POST /api/admin/tiktok/verify-2fa — TikTok 2FA (not supported, returns error)
+router.post('/tiktok/verify-2fa', async (req, res) => {
+  const result = await tiktokAuth.verify2FA();
+  return res.status(400).json({ error: result.error || '2FA not supported for TikTok' });
+});
+
+// GET /api/admin/tiktok/accounts — list scraper accounts
+router.get('/tiktok/accounts', (req, res) => {
+  const accounts = getPlatformAccounts('tiktok');
+  res.json(accounts.map(a => ({
+    username: a.username,
+    userId: a.userId,
+    addedAt: a.addedAt,
+    hasCookies: !!(a.cookies),
+  })));
+});
+
+// DELETE /api/admin/tiktok/account/:username — remove a scraper account
+router.delete('/tiktok/account/:username', (req, res) => {
+  const { username } = req.params;
+  const accounts = getPlatformAccounts('tiktok');
+  const filtered = accounts.filter(a => a.username !== username);
+
+  if (filtered.length === accounts.length) {
+    return res.status(404).json({ error: 'Account not found' });
+  }
+
+  savePlatformAccounts('tiktok', filtered);
+  res.json({ success: true, remaining: filtered.length });
+});
+
+// ── Twitter/X Endpoints ─────────────────────────────
+
+// POST /api/admin/twitter/login — start Twitter login
+router.post('/twitter/login', async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password required' });
+  }
+
+  try {
+    const result = await twitterAuth.login(username, password);
+
+    if (result.success) {
+      const accounts = upsertPlatformAccount('twitter', result);
+      return res.json({ success: true, username: result.username, totalAccounts: accounts.length });
+    }
+
+    if (result.twoFactorRequired) {
+      return res.json({
+        twoFactorRequired: true,
+        method: result.method || 'totp',
+        username: result.username,
+      });
+    }
+
+    return res.status(400).json({ error: result.error || 'Login failed' });
+  } catch (err) {
+    console.error('Twitter login endpoint error:', err);
+    return res.status(500).json({ error: 'Internal server error during login' });
+  }
+});
+
+// POST /api/admin/twitter/verify-2fa — complete Twitter 2FA verification
+router.post('/twitter/verify-2fa', async (req, res) => {
+  const { username, code } = req.body;
+  if (!username || !code) {
+    return res.status(400).json({ error: 'Username and 2FA code required' });
+  }
+
+  try {
+    const result = await twitterAuth.verify2FA(username, code);
+
+    if (result.success) {
+      const accounts = upsertPlatformAccount('twitter', result);
+      return res.json({ success: true, username: result.username, totalAccounts: accounts.length });
+    }
+
+    return res.status(400).json({ error: result.error || '2FA verification failed' });
+  } catch (err) {
+    console.error('Twitter 2FA endpoint error:', err);
+    return res.status(500).json({ error: 'Internal server error during 2FA' });
+  }
+});
+
+// GET /api/admin/twitter/accounts — list scraper accounts
+router.get('/twitter/accounts', (req, res) => {
+  const accounts = getPlatformAccounts('twitter');
+  res.json(accounts.map(a => ({
+    username: a.username,
+    userId: a.userId,
+    addedAt: a.addedAt,
+    hasCookies: !!(a.cookies),
+  })));
+});
+
+// DELETE /api/admin/twitter/account/:username — remove a scraper account
+router.delete('/twitter/account/:username', (req, res) => {
+  const { username } = req.params;
+  const accounts = getPlatformAccounts('twitter');
+  const filtered = accounts.filter(a => a.username !== username);
+
+  if (filtered.length === accounts.length) {
+    return res.status(404).json({ error: 'Account not found' });
+  }
+
+  savePlatformAccounts('twitter', filtered);
   res.json({ success: true, remaining: filtered.length });
 });
 
